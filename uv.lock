@@ -363,6 +363,9 @@ dev = [
     { name = "pytest-randomly" },
     { name = "ruff" },
 ]
+wheelgap-lab = [
+    { name = "wheelgap" },
+]
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = "==2.14.1" }]
@@ -376,6 +379,7 @@ dev = [
     { name = "pytest-randomly", specifier = ">=3.16,<5" },
     { name = "ruff", specifier = ">=0.12,<1" },
 ]
+wheelgap-lab = [{ name = "wheelgap", specifier = "==0.13.0" }]
 
 [[package]]
 name = "ruff"
@@ -430,4 +434,16 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ff/50/0195198eb1d75bab716bb0a813abea4cc394bfa17a92a189f021a34859af/typing_inspection-0.4.5.tar.gz", hash = "sha256:7f16c411e7930dc79596d42ab44672a3fe5f60eb34b781a1647e7872363120c7", size = 81194, upload-time = "2026-11-04T14:13:23.774Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/de/0c/ea2544850a7c135e15033a5c7a8e7211136184b7ae63e2239d557c2b3019/typing_inspection-0.4.5-py3-none-any.whl", hash = "sha256:bc210535442b39e1bf2805e0c7a17dfd6a4ace760c84c7f7d16245d23a6b1c39", size = 14874, upload-time = "2026-11-04T14:13:22.616Z" },
+]
+
+[[package]]
+name = "wheelgap"
+version = "0.13.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/2a/65f8d8979afc70ec85358eb06afaccacae8f033ecbaa84a3baf8b5c31ca2/wheelgap-0.13.0.tar.gz", hash = "sha256:aae795f989a9bffff05285d121cb08bfae213c4782454cd798ea642204df2ee2", size = 1234053, upload-time = "2026-11-16T17:14:28.55Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/38/3f088d7ef9880b69babcc6ca61d5da9924f8af2031220e30276ec2e67154/wheelgap-0.13.0-py3-none-any.whl", hash = "sha256:d933fe3c6ebc4a8af1c0a6ca60ec344b59d16a84c07db705d1a1d75b6f21e4c5", size = 244510, upload-time = "2026-11-16T17:14:26.777Z" },
 ]
