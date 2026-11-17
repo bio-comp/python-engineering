@@ -1,0 +1,26 @@
+from enum import Enum
+from typing import override
+
+
+class Mode(Enum):
+    FAST = "fast"
+    SLOW = "slow"
+
+class Parent:
+    def f(self, value: int) -> int:
+        return value
+
+class Child(Parent):
+    @override
+    def f(self, value: int) -> int:
+        return value + 1
+
+def classify(mode: Mode) -> str:
+    match mode:
+        case Mode.FAST:
+            return "fast"
+        case Mode.SLOW:
+            return "slow"
+
+def successful(value: str) -> str:
+    return value.strip()
