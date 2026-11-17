@@ -1,0 +1,23 @@
+name: Verify
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.8.4"
+      - run: uv python install 3.14.10
+      - run: uv lock --check
+      - run: uv sync --locked
+      - run: uv run --locked ruff check --no-fix .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked mypy src tests
+      - run: uv run --locked pytest --randomly-seed=101 --cov=python_engineering --cov-branch --cov-report=term-missing -q
+      - run: uv build
