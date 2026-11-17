@@ -1,0 +1,1 @@
+{"oracle_id":"pydantic-after-v1","cases":[{"case_id":"valid_order","expected":"accepted"},{"case_id":"invalid_order","expected":"rejected"}]}
