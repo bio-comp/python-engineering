@@ -14,6 +14,9 @@ build-backend = "hatchling.build"
 packages = ["src/python_engineering"]
 
 [dependency-groups]
+citeprobe-lab = [
+    "citeprobe",
+]
 dev = [
     "ruff>=0.12,<1",
     "mypy>=1.18,<2",
@@ -47,3 +50,6 @@ source = ["python_engineering"]
 [tool.coverage.report]
 fail_under = 90
 show_missing = true
+
+[tool.uv.sources]
+citeprobe = { git = "https://github.com/Imanm02/citeprobe", rev = "c3842797ee99785a6b4d80884e0cd5d886487ddf" }

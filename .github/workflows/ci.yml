@@ -20,4 +20,5 @@ jobs:
       - run: uv run --locked ruff format --check .
       - run: uv run --locked mypy src tests
       - run: uv run --locked pytest --randomly-seed=101 --cov=python_engineering --cov-branch --cov-report=term-missing -q
+      - run: uv run --locked --group citeprobe-lab pytest -q experiments/citeprobe/test_offline_abstention.py
       - run: uv build
