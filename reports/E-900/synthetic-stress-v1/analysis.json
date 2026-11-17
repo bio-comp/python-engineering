@@ -1,0 +1,96 @@
+{
+  "baseline": {
+    "condition_id": "baseline",
+    "recorded_rows": 65,
+    "measured_rows": 65,
+    "detection_rows": 65,
+    "tp": 17,
+    "fp": 2,
+    "tn": 42,
+    "fn": 4,
+    "precision": 0.8947368421052632,
+    "recall": 0.8095238095238095,
+    "specificity": 0.9545454545454546,
+    "accuracy": 0.9076923076923077,
+    "median_duration_ms": 13.0,
+    "duration_count": 65
+  },
+  "candidate": {
+    "condition_id": "candidate",
+    "recorded_rows": 65,
+    "measured_rows": 65,
+    "detection_rows": 65,
+    "tp": 18,
+    "fp": 2,
+    "tn": 42,
+    "fn": 3,
+    "precision": 0.9,
+    "recall": 0.8571428571428571,
+    "specificity": 0.9545454545454546,
+    "accuracy": 0.9230769230769231,
+    "median_duration_ms": 11.0,
+    "duration_count": 65
+  },
+  "paired": {
+    "matched_detection_pairs": 65,
+    "baseline_only_correct": 5,
+    "candidate_only_correct": 6,
+    "both_correct": 54,
+    "both_wrong": 0,
+    "candidate_minus_baseline_accuracy": 0.015384615384615385,
+    "unique_true_positives": 4,
+    "interpretation": "Descriptive paired comparisons on matched fixture/repetition/seed only; repeated invocations do not establish independent tasks or a population interval."
+  },
+  "criteria": [
+    {
+      "criterion_id": "C-precision",
+      "dimension": "false_positive_burden",
+      "category": "static_typing",
+      "question": "What fraction of flagged cases have seeded defects?",
+      "metric": "precision",
+      "condition_id": "candidate",
+      "value": 0.9,
+      "denominator": 20,
+      "score": 3,
+      "state": "MEASURED",
+      "evidence_grade": "synthetic_demonstration",
+      "anchors": [
+        "precision < 0.50",
+        "0.50 to < 0.70",
+        "0.70 to < 0.85",
+        "0.85 to < 0.95",
+        "precision >= 0.95 (requires independent corroboration to qualify)"
+      ],
+      "evidence_ids": [
+        "SYN-001"
+      ],
+      "explanation": "Mechanically derived from precision=0.9 (denominator=20); thresholds=(0.5, 0.7, 0.85, 0.95). This is a criterion outcome, not an adoption or evidence-strength claim."
+    },
+    {
+      "criterion_id": "C-duration",
+      "dimension": "performance",
+      "category": "static_typing",
+      "question": "What is the candidate median execution time in ms?",
+      "metric": "median_duration_ms",
+      "condition_id": "candidate",
+      "value": 11.0,
+      "denominator": 65,
+      "score": 3,
+      "state": "MEASURED",
+      "evidence_grade": "synthetic_demonstration",
+      "anchors": [
+        "median > 80ms",
+        "40 < median <= 80ms",
+        "20 < median <= 40ms",
+        "10 < median <= 20ms",
+        "median <= 10ms; no correctness substitution"
+      ],
+      "evidence_ids": [
+        "SYN-001"
+      ],
+      "explanation": "Mechanically derived from median_duration_ms=11 (denominator=65); thresholds=(10.0, 20.0, 40.0, 80.0). This is a criterion outcome, not an adoption or evidence-strength claim."
+    }
+  ],
+  "essential_gate_state": "UNKNOWN - NOT QUALIFIED",
+  "statistical_scope": "Descriptive counts, proportions, and medians only; no confidence intervals/p-values without an independently specified sampling design."
+}

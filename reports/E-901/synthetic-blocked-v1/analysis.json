@@ -1,0 +1,92 @@
+{
+  "baseline": {
+    "condition_id": "baseline",
+    "recorded_rows": 0,
+    "measured_rows": 0,
+    "detection_rows": 0,
+    "tp": 0,
+    "fp": 0,
+    "tn": 0,
+    "fn": 0,
+    "precision": null,
+    "recall": null,
+    "specificity": null,
+    "accuracy": null,
+    "median_duration_ms": null,
+    "duration_count": 0
+  },
+  "candidate": {
+    "condition_id": "candidate",
+    "recorded_rows": 1,
+    "measured_rows": 0,
+    "detection_rows": 0,
+    "tp": 0,
+    "fp": 0,
+    "tn": 0,
+    "fn": 0,
+    "precision": null,
+    "recall": null,
+    "specificity": null,
+    "accuracy": null,
+    "median_duration_ms": null,
+    "duration_count": 0
+  },
+  "paired": {
+    "matched_detection_pairs": 0,
+    "baseline_only_correct": 0,
+    "candidate_only_correct": 0,
+    "both_correct": 0,
+    "both_wrong": 0,
+    "candidate_minus_baseline_accuracy": null,
+    "unique_true_positives": 0,
+    "interpretation": "Descriptive paired comparisons on matched fixture/repetition/seed only; repeated invocations do not establish independent tasks or a population interval."
+  },
+  "criteria": [
+    {
+      "criterion_id": "C-precision",
+      "dimension": "false_positive_burden",
+      "category": "static_typing",
+      "question": "What fraction of flagged cases have seeded defects?",
+      "metric": "precision",
+      "condition_id": "candidate",
+      "value": null,
+      "denominator": 0,
+      "score": null,
+      "state": "INSUFFICIENT EVIDENCE",
+      "evidence_grade": "NOT MEASURED",
+      "anchors": [
+        "precision < 0.50",
+        "0.50 to < 0.70",
+        "0.70 to < 0.85",
+        "0.85 to < 0.95",
+        "precision >= 0.95 (requires independent corroboration to qualify)"
+      ],
+      "evidence_ids": [],
+      "explanation": "Only 0 applicable observations; minimum 10. No score assigned."
+    },
+    {
+      "criterion_id": "C-duration",
+      "dimension": "performance",
+      "category": "static_typing",
+      "question": "What is the candidate median execution time in ms?",
+      "metric": "median_duration_ms",
+      "condition_id": "candidate",
+      "value": null,
+      "denominator": 0,
+      "score": null,
+      "state": "INSUFFICIENT EVIDENCE",
+      "evidence_grade": "NOT MEASURED",
+      "anchors": [
+        "median > 80ms",
+        "40 < median <= 80ms",
+        "20 < median <= 40ms",
+        "10 < median <= 20ms",
+        "median <= 10ms; no correctness substitution"
+      ],
+      "evidence_ids": [],
+      "explanation": "Only 0 applicable observations; minimum 10. No score assigned."
+    }
+  ],
+  "essential_gate_state": "FAILED - NONCOMPENSATORY",
+  "statistical_scope": "Descriptive counts, proportions, and medians only; no confidence intervals/p-values without an independently specified sampling design."
+}

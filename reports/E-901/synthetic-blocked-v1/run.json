@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "rubric_revision": "synthetic-demo-rubric-v1",
+  "experiment": {
+    "experiment_id": "E-901",
+    "protocol_revision": "SYNTHETIC-NOT-REGISTERED-v1",
+    "title": "Synthetic reporting abstention demonstration",
+    "run_id": "synthetic-blocked-v1",
+    "executed_at": "2026-11-17T23:32:41.229502Z",
+    "status": "BLOCKED",
+    "research_question": "Can the reporting harness preserve synthetic evidence labels and uncertainty?",
+    "hypothesis": "Unknown results remain unscored and synthetic measurements never imply efficacy.",
+    "prespecified_criteria": "Check validation, tables, evidence-grade, score threshold boundaries and gates."
+  },
+  "environment": {
+    "python_implementation": "CPython",
+    "python_version": "3.14.10",
+    "interpreter_executable": "/Users/mikeh/repos/python-engineering-reporting/.venv/bin/python3",
+    "uv_version": "uv 0.8.4 (e176e1714 2025-07-30)",
+    "os_name": "Darwin",
+    "os_release": "25.6.0",
+    "architecture": "arm64",
+    "repository": "git@github.com:bio-comp/python-engineering.git",
+    "branch": "feat/issue18-reporting-foundation",
+    "commit_sha": "a4d85dc42229f2425216a591303847de47facc0d",
+    "fixture_revision": "synthetic-generator-v1",
+    "lockfile_sha256": "e8e893ac9dc30f38e7b20d5c0376b6c3a8eda4341bf0004015ec860ca4ffab5d",
+    "pyproject_sha256": "b74deb779a140dedb546415bf6c8a99dcfa2ebac11c42f59b3e5e27873c4f386",
+    "harness_version": "synthetic-generator-v1",
+    "generator_version": "0.1.0",
+    "commands": [
+      "uv run --locked python examples/build_demo_inputs.py",
+      "uv run --locked python -m python_engineering.reporting build-report examples/synthetic_900.json reports/E-900/synthetic-stress-v1"
+    ],
+    "tool_versions": {
+      "SyntheticAnalyzer": "0.0.0-fictional"
+    },
+    "dependency_versions": {
+      "pydantic": "2.14.1",
+      "reportlab": "4.5.1"
+    },
+    "runtime_identity": "isolated macOS worktree; captured before publication; the Git source checkout may be dirty",
+    "hardware": "NOT MEASURED",
+    "ci_runner": "NOT APPLICABLE",
+    "selected_environment": {},
+    "random_seeds": [
+      101
+    ],
+    "model_identity": "NOT APPLICABLE",
+    "agent_permissions": "NOT APPLICABLE",
+    "prompt_revision": "NOT APPLICABLE",
+    "source_retrieved_at": "2026-11-17 (renderer documentation; exact retrieval timestamp unavailable)"
+  },
+  "baseline": {
+    "condition_id": "baseline",
+    "upstream_identity": "FictionalAnalyzer",
+    "version": "0.0.0",
+    "configuration": "synthetic test default"
+  },
+  "candidate": {
+    "condition_id": "candidate",
+    "upstream_identity": "FictionalAnalyzer",
+    "version": "0.0.0-fictional",
+    "configuration": "synthetic aggressive flags"
+  },
+  "observations": [
+    {
+      "observation_id": "blocked-001",
+      "condition_id": "candidate",
+      "case_id": "unexecuted_case_001",
+      "state": "EXECUTION BLOCKED",
+      "evidence_id": "SYN-001",
+      "repetition": 0,
+      "seed": null,
+      "expected_defect": null,
+      "detected_defect": null,
+      "duration_ms": null,
+      "note": "No actual invocation or outcome exists"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "SYN-001",
+      "grade": "synthetic_demonstration",
+      "source": "examples/build_demo_inputs.py",
+      "locator": "make_run / generated controlled pseudodata",
+      "source_sha256": "fbef2a7711e05ff9e4a22b79e4a45669a22b6279c11dae001466dccb8e8e1317",
+      "note": "Constructed synthetic rows are purposely not real analyzer observations. Long wrapped explanatory notes exercise PDF page and table layout and prevent a green-looking report from masquerading as independently verified evidence. Every result is synthetic and must be excluded from adoption decisions."
+    },
+    {
+      "evidence_id": "DOC-001",
+      "grade": "documentation_only",
+      "source": "https://docs.reportlab.com/reportlab/userguide/ch7_tables/",
+      "locator": "Tables and TableStyles / repeatRows",
+      "source_sha256": null,
+      "note": "Official renderer capability documentation; not an observation or tool efficacy oracle."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "C-precision",
+      "category": "static_typing",
+      "dimension": "false_positive_burden",
+      "question": "What fraction of flagged cases have seeded defects?",
+      "metric": "precision",
+      "condition_id": "candidate",
+      "direction": "higher",
+      "thresholds": [
+        0.5,
+        0.7,
+        0.85,
+        0.95
+      ],
+      "anchors": [
+        "precision < 0.50",
+        "0.50 to < 0.70",
+        "0.70 to < 0.85",
+        "0.85 to < 0.95",
+        "precision >= 0.95 (requires independent corroboration to qualify)"
+      ],
+      "min_denominator": 10,
+      "required": true
+    },
+    {
+      "criterion_id": "C-duration",
+      "category": "static_typing",
+      "dimension": "performance",
+      "question": "What is the candidate median execution time in ms?",
+      "metric": "median_duration_ms",
+      "condition_id": "candidate",
+      "direction": "lower",
+      "thresholds": [
+        10.0,
+        20.0,
+        40.0,
+        80.0
+      ],
+      "anchors": [
+        "median > 80ms",
+        "40 < median <= 80ms",
+        "20 < median <= 40ms",
+        "10 < median <= 20ms",
+        "median <= 10ms; no correctness substitution"
+      ],
+      "min_denominator": 10,
+      "required": true
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "G-independent",
+      "requirement": "Independent replication",
+      "passed": null,
+      "evidence_ids": [],
+      "note": "No independent or real experimental evidence"
+    },
+    {
+      "gate_id": "G-repro",
+      "requirement": "Real tool invocation reproduced",
+      "passed": false,
+      "evidence_ids": [],
+      "note": "Simulation does not run a real upstream tool"
+    }
+  ],
+  "interpretation": {
+    "summary": "Artificial run used exclusively to verify the reporting implementation.",
+    "limitations": [
+      "All observed numbers and defect labels are generated, not tool measurements.",
+      "Repeated or paired rows are synthetic; no generalization or statistical inference.",
+      "Upstream identity is intentionally fictional and nonqualified."
+    ],
+    "applicability": "PDF/Markdown renderer, validation, page flow, missing evidence and score mechanics only",
+    "reviewer": "Automated synthetic fixture generator (not independent)",
+    "disposition": "NO ADOPTION DECISION - SYNTHETIC DEMO",
+    "proposed_next_step": "Independent review and real frozen protocol-scoped experimental run."
+  },
+  "synthetic_demonstration": true
+}

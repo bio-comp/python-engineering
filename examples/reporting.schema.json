@@ -1,0 +1,749 @@
+{
+  "$defs": {
+    "Condition": {
+      "additionalProperties": false,
+      "properties": {
+        "condition_id": {
+          "enum": [
+            "baseline",
+            "candidate"
+          ],
+          "title": "Condition Id",
+          "type": "string"
+        },
+        "configuration": {
+          "minLength": 1,
+          "title": "Configuration",
+          "type": "string"
+        },
+        "upstream_identity": {
+          "minLength": 2,
+          "title": "Upstream Identity",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "condition_id",
+        "upstream_identity",
+        "version",
+        "configuration"
+      ],
+      "title": "Condition",
+      "type": "object"
+    },
+    "Criterion": {
+      "additionalProperties": false,
+      "properties": {
+        "anchors": {
+          "maxItems": 5,
+          "minItems": 5,
+          "prefixItems": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Anchors",
+          "type": "array"
+        },
+        "category": {
+          "minLength": 2,
+          "title": "Category",
+          "type": "string"
+        },
+        "condition_id": {
+          "enum": [
+            "baseline",
+            "candidate"
+          ],
+          "title": "Condition Id",
+          "type": "string"
+        },
+        "criterion_id": {
+          "minLength": 2,
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "dimension": {
+          "minLength": 2,
+          "title": "Dimension",
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "higher",
+            "lower"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "metric": {
+          "enum": [
+            "precision",
+            "recall",
+            "specificity",
+            "accuracy",
+            "median_duration_ms",
+            "unique_true_positives"
+          ],
+          "title": "Metric",
+          "type": "string"
+        },
+        "min_denominator": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "title": "Min Denominator",
+          "type": "integer"
+        },
+        "question": {
+          "minLength": 5,
+          "title": "Question",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "thresholds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Thresholds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "category",
+        "dimension",
+        "question",
+        "metric",
+        "condition_id",
+        "direction",
+        "thresholds",
+        "anchors"
+      ],
+      "title": "Criterion",
+      "type": "object"
+    },
+    "Environment": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_permissions": {
+          "default": "NOT APPLICABLE",
+          "title": "Agent Permissions",
+          "type": "string"
+        },
+        "architecture": {
+          "minLength": 1,
+          "title": "Architecture",
+          "type": "string"
+        },
+        "branch": {
+          "minLength": 1,
+          "title": "Branch",
+          "type": "string"
+        },
+        "ci_runner": {
+          "default": "NOT APPLICABLE",
+          "title": "Ci Runner",
+          "type": "string"
+        },
+        "commands": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Commands",
+          "type": "array"
+        },
+        "commit_sha": {
+          "pattern": "^[a-f0-9]{40}$",
+          "title": "Commit Sha",
+          "type": "string"
+        },
+        "dependency_versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dependency Versions",
+          "type": "object"
+        },
+        "fixture_revision": {
+          "minLength": 1,
+          "title": "Fixture Revision",
+          "type": "string"
+        },
+        "generator_version": {
+          "minLength": 1,
+          "title": "Generator Version",
+          "type": "string"
+        },
+        "hardware": {
+          "default": "NOT MEASURED",
+          "title": "Hardware",
+          "type": "string"
+        },
+        "harness_version": {
+          "minLength": 1,
+          "title": "Harness Version",
+          "type": "string"
+        },
+        "interpreter_executable": {
+          "pattern": "^/",
+          "title": "Interpreter Executable",
+          "type": "string"
+        },
+        "lockfile_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Lockfile Sha256",
+          "type": "string"
+        },
+        "model_identity": {
+          "default": "NOT APPLICABLE",
+          "title": "Model Identity",
+          "type": "string"
+        },
+        "os_name": {
+          "minLength": 1,
+          "title": "Os Name",
+          "type": "string"
+        },
+        "os_release": {
+          "minLength": 1,
+          "title": "Os Release",
+          "type": "string"
+        },
+        "prompt_revision": {
+          "default": "NOT APPLICABLE",
+          "title": "Prompt Revision",
+          "type": "string"
+        },
+        "pyproject_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Pyproject Sha256",
+          "type": "string"
+        },
+        "python_implementation": {
+          "minLength": 1,
+          "title": "Python Implementation",
+          "type": "string"
+        },
+        "python_version": {
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+",
+          "title": "Python Version",
+          "type": "string"
+        },
+        "random_seeds": {
+          "default": [],
+          "items": {
+            "type": "integer"
+          },
+          "title": "Random Seeds",
+          "type": "array"
+        },
+        "repository": {
+          "minLength": 1,
+          "title": "Repository",
+          "type": "string"
+        },
+        "runtime_identity": {
+          "default": "local",
+          "title": "Runtime Identity",
+          "type": "string"
+        },
+        "selected_environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Selected Environment",
+          "type": "object"
+        },
+        "source_retrieved_at": {
+          "default": "NOT MEASURED",
+          "title": "Source Retrieved At",
+          "type": "string"
+        },
+        "tool_versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Tool Versions",
+          "type": "object"
+        },
+        "uv_version": {
+          "minLength": 1,
+          "title": "Uv Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "python_implementation",
+        "python_version",
+        "interpreter_executable",
+        "uv_version",
+        "os_name",
+        "os_release",
+        "architecture",
+        "repository",
+        "branch",
+        "commit_sha",
+        "fixture_revision",
+        "lockfile_sha256",
+        "pyproject_sha256",
+        "harness_version",
+        "generator_version",
+        "commands",
+        "tool_versions",
+        "dependency_versions"
+      ],
+      "title": "Environment",
+      "type": "object"
+    },
+    "EssentialGate": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "gate_id": {
+          "minLength": 2,
+          "title": "Gate Id",
+          "type": "string"
+        },
+        "note": {
+          "minLength": 1,
+          "title": "Note",
+          "type": "string"
+        },
+        "passed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Passed"
+        },
+        "requirement": {
+          "minLength": 5,
+          "title": "Requirement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "gate_id",
+        "requirement",
+        "passed",
+        "note"
+      ],
+      "title": "EssentialGate",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "minLength": 2,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "grade": {
+          "$ref": "#/$defs/EvidenceGrade"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "note": {
+          "minLength": 1,
+          "title": "Note",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 3,
+          "title": "Source",
+          "type": "string"
+        },
+        "source_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Sha256"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "grade",
+        "source",
+        "locator",
+        "note"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "EvidenceGrade": {
+      "enum": [
+        "independently_reproduced",
+        "controlled_local",
+        "small_pilot",
+        "documentation_only",
+        "anecdotal",
+        "synthetic_demonstration"
+      ],
+      "title": "EvidenceGrade",
+      "type": "string"
+    },
+    "Experiment": {
+      "additionalProperties": false,
+      "properties": {
+        "executed_at": {
+          "format": "date-time",
+          "title": "Executed At",
+          "type": "string"
+        },
+        "experiment_id": {
+          "pattern": "^E-[0-9]{3}$",
+          "title": "Experiment Id",
+          "type": "string"
+        },
+        "hypothesis": {
+          "minLength": 5,
+          "title": "Hypothesis",
+          "type": "string"
+        },
+        "prespecified_criteria": {
+          "minLength": 5,
+          "title": "Prespecified Criteria",
+          "type": "string"
+        },
+        "protocol_revision": {
+          "minLength": 1,
+          "title": "Protocol Revision",
+          "type": "string"
+        },
+        "research_question": {
+          "minLength": 5,
+          "title": "Research Question",
+          "type": "string"
+        },
+        "run_id": {
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,80}$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/StudyStatus"
+        },
+        "title": {
+          "minLength": 3,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "experiment_id",
+        "protocol_revision",
+        "title",
+        "run_id",
+        "executed_at",
+        "status",
+        "research_question",
+        "hypothesis",
+        "prespecified_criteria"
+      ],
+      "title": "Experiment",
+      "type": "object"
+    },
+    "Interpretation": {
+      "additionalProperties": false,
+      "properties": {
+        "applicability": {
+          "minLength": 4,
+          "title": "Applicability",
+          "type": "string"
+        },
+        "disposition": {
+          "minLength": 4,
+          "title": "Disposition",
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "proposed_next_step": {
+          "minLength": 4,
+          "title": "Proposed Next Step",
+          "type": "string"
+        },
+        "reviewer": {
+          "minLength": 1,
+          "title": "Reviewer",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 4,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary",
+        "limitations",
+        "applicability",
+        "reviewer",
+        "disposition",
+        "proposed_next_step"
+      ],
+      "title": "Interpretation",
+      "type": "object"
+    },
+    "Observation": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "minLength": 1,
+          "title": "Case Id",
+          "type": "string"
+        },
+        "condition_id": {
+          "enum": [
+            "baseline",
+            "candidate"
+          ],
+          "title": "Condition Id",
+          "type": "string"
+        },
+        "detected_defect": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detected Defect"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "evidence_id": {
+          "minLength": 2,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "expected_defect": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Defect"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "observation_id": {
+          "minLength": 2,
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "repetition": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Repetition",
+          "type": "integer"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "state": {
+          "$ref": "#/$defs/ObservationState"
+        }
+      },
+      "required": [
+        "observation_id",
+        "condition_id",
+        "case_id",
+        "state",
+        "evidence_id"
+      ],
+      "title": "Observation",
+      "type": "object"
+    },
+    "ObservationState": {
+      "enum": [
+        "MEASURED",
+        "NOT MEASURED",
+        "NOT APPLICABLE",
+        "INSUFFICIENT EVIDENCE",
+        "EXECUTION BLOCKED"
+      ],
+      "title": "ObservationState",
+      "type": "string"
+    },
+    "StudyStatus": {
+      "enum": [
+        "PLANNED",
+        "PILOT",
+        "QUALIFIED",
+        "INCOMPLETE",
+        "BLOCKED"
+      ],
+      "title": "StudyStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseline": {
+      "$ref": "#/$defs/Condition"
+    },
+    "candidate": {
+      "$ref": "#/$defs/Condition"
+    },
+    "criteria": {
+      "items": {
+        "$ref": "#/$defs/Criterion"
+      },
+      "title": "Criteria",
+      "type": "array"
+    },
+    "environment": {
+      "$ref": "#/$defs/Environment"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "experiment": {
+      "$ref": "#/$defs/Experiment"
+    },
+    "gates": {
+      "items": {
+        "$ref": "#/$defs/EssentialGate"
+      },
+      "title": "Gates",
+      "type": "array"
+    },
+    "interpretation": {
+      "$ref": "#/$defs/Interpretation"
+    },
+    "observations": {
+      "items": {
+        "$ref": "#/$defs/Observation"
+      },
+      "title": "Observations",
+      "type": "array"
+    },
+    "rubric_revision": {
+      "minLength": 1,
+      "title": "Rubric Revision",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "synthetic_demonstration": {
+      "title": "Synthetic Demonstration",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "rubric_revision",
+    "experiment",
+    "environment",
+    "baseline",
+    "candidate",
+    "observations",
+    "evidence",
+    "criteria",
+    "gates",
+    "interpretation",
+    "synthetic_demonstration"
+  ],
+  "title": "Run",
+  "type": "object"
+}
