@@ -363,6 +363,9 @@ dev = [
     { name = "pytest-randomly" },
     { name = "ruff" },
 ]
+sqlty-lab = [
+    { name = "sqlty" },
+]
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = "==2.14.1" }]
@@ -376,6 +379,7 @@ dev = [
     { name = "pytest-randomly", specifier = ">=3.16,<5" },
     { name = "ruff", specifier = ">=0.12,<1" },
 ]
+sqlty-lab = [{ name = "sqlty", specifier = "==0.6.0" }]
 
 [[package]]
 name = "ruff"
@@ -409,6 +413,38 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594, upload-time = "2021-05-16T22:03:42.897Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575, upload-time = "2021-05-16T22:03:41.177Z" },
+]
+
+[[package]]
+name = "sqlty"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pathspec" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ad/7d/165e064fc97978e9c394059dfcad172a6fc02c23520aa1134ccb0a87c1ec/sqlty-0.6.0.tar.gz", hash = "sha256:e5d1e3804d2e0c6708a5d3ee677c1164bf7ff422a71bfa865be0311822deecb2", size = 834646, upload-time = "2026-11-15T22:21:06.387Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/b9/090ac365f2cdfea67719382aaae432f819750ef27223100c425295e494d3/sqlty-0.6.0-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:664ce071d5141b09935d112048209f3f3f9e0035ba099fd88293cb43a730be4a", size = 16736812, upload-time = "2026-11-15T22:20:16.913Z" },
+    { url = "https://files.pythonhosted.org/packages/53/c3/a7d42fd785104d8a2140be46a36296098465a254e7a972e80449dd148b00/sqlty-0.6.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:a41fc1cb4f4fc5e29b9675aed1918854abcb090c9f5aa02b566edc39d15e890c", size = 15219452, upload-time = "2026-11-15T22:20:19.471Z" },
+    { url = "https://files.pythonhosted.org/packages/41/cf/418cf7b2191fa26335adb9d1ce86f0d66082e8a8f8d17a9f73f97a83dc0a/sqlty-0.6.0-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:010cc7a9e7525c1f85bca927faf2927279e0f28f6ad623a5cb434cafb989f53f", size = 16205608, upload-time = "2026-11-15T22:20:22.186Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/22/cb913e08692cd953c601360104286d3daa64b8b2740445d99e41f57a89c3/sqlty-0.6.0-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:1783d070797b92b34fad6de1cd9f9d0f8d98460f8995e61a58c16bb572bc1458", size = 17266287, upload-time = "2026-11-15T22:20:24.637Z" },
+    { url = "https://files.pythonhosted.org/packages/25/35/2e0e2ac1188c8ccd3505c33585ca56117cb2b81c78972685999bc8ac22ea/sqlty-0.6.0-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:9e119202b77a3eabc3404809a002064d3d4cd2171cc84da19d74e80f2615c6ea", size = 16274567, upload-time = "2026-11-15T22:20:27.818Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/87/3f8cc9d540ab90efb45a8d0315b94d8108a76849cd5dba57f9d94f1a5ab3/sqlty-0.6.0-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:1405f66595ad30a28ca5fbb7f8d9985a12dea770a188c116d47a649f77302357", size = 17450958, upload-time = "2026-11-15T22:20:29.914Z" },
+    { url = "https://files.pythonhosted.org/packages/46/23/49ff70ca16b2c42e49f0e7f8d5eb1722e889dc5e82df570de597da74af87/sqlty-0.6.0-cp314-cp314-win_amd64.whl", hash = "sha256:1b5c59c9f15caf5ced738f89c34760224a88f5151164ff3d7b1f20a0f83741d2", size = 18566265, upload-time = "2026-11-15T22:20:32.109Z" },
+    { url = "https://files.pythonhosted.org/packages/86/33/44ac2e3a7c31102d3d7151269dd3312f8d18e83d45a60f76c41a00ae3446/sqlty-0.6.0-cp314-cp314-win_arm64.whl", hash = "sha256:4a7910be816071e462686c32559a6d64c30511c9ce9c82df68d46a22bf124ab5", size = 16065245, upload-time = "2026-11-15T22:20:34.611Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/dd/b7a04cd555b3a181defa3c2c324a5dcaa0bd1e73a7d747f3eb7b15bec366/sqlty-0.6.0-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:fbac7eb71c965df860999511705c533a334fa4873abb1a096d41dcbae19c6704", size = 16204898, upload-time = "2026-11-15T22:20:36.712Z" },
+    { url = "https://files.pythonhosted.org/packages/be/63/3852ee53a24553402c81375454494ad5fbf1c19cbb649e36981da376234d/sqlty-0.6.0-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:68965e59bc2c8b9ae2d477e90daf37e115eadceea35da794f66b1bd1e59acff7", size = 17270862, upload-time = "2026-11-15T22:20:38.786Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/c6/76f186a1ba99d0efb7d5a95b785ec31026f0530a05486cd2362a7a7cd77c/sqlty-0.6.0-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:41b5d0ed7067f143970e3b3b556fb85800075d28c6d7d97a1c84fc6468b1fc96", size = 16279595, upload-time = "2026-11-15T22:20:42.443Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/3b/9b8027b2a5c671f8fe2376d4b60a7db147c503b69b334c493fe464e924d2/sqlty-0.6.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:2ae3984b0841cd1b85095430f8b8fdbf952d8c52efc8373e5ba02e810b4e27d3", size = 17451386, upload-time = "2026-11-15T22:20:44.723Z" },
+    { url = "https://files.pythonhosted.org/packages/29/1c/f9a7adfe8820e046089b12011223d3ad6872c716f112b621bc5854e326a7/sqlty-0.6.0-cp315-abi3.abi3t-macosx_10_12_x86_64.whl", hash = "sha256:e49426b0bcc7ecc8a5f4d12f4f35b20bf85f4dabd7ddfacc9e2d8f4843fa413f", size = 16749728, upload-time = "2026-11-15T22:20:47.332Z" },
+    { url = "https://files.pythonhosted.org/packages/c3/24/3624b402b914ca4b754ac5ceff8fcd1fde8237482ba9d945b8bfd301549a/sqlty-0.6.0-cp315-abi3.abi3t-macosx_11_0_arm64.whl", hash = "sha256:8639ea062f38b38caf08972c6d605267c1a0c1a05f9b6dd6be86c2deeb1f9d67", size = 15227031, upload-time = "2026-11-15T22:20:49.571Z" },
+    { url = "https://files.pythonhosted.org/packages/40/d7/1cec9f9b424a360c8cb144985539a704099fc04c9d67539b98b4ffa632b9/sqlty-0.6.0-cp315-abi3.abi3t-manylinux_2_28_aarch64.whl", hash = "sha256:54c029ba094d53017d1ad14ffc61ebd82c2456794df0e0e9ce7055cfaaf7bdcf", size = 16212500, upload-time = "2026-11-15T22:20:51.64Z" },
+    { url = "https://files.pythonhosted.org/packages/33/01/83ad1592821acb8c92ca3eea6e31e82764b1d89fff40e0ae806540f78d1b/sqlty-0.6.0-cp315-abi3.abi3t-manylinux_2_28_x86_64.whl", hash = "sha256:78ea0cf5873d1cce083ab26fddc253d5e5d3b944831037d024e99195fef922b0", size = 17278326, upload-time = "2026-11-15T22:20:54.435Z" },
+    { url = "https://files.pythonhosted.org/packages/08/ed/bc8cade16f393f96605d96a01e040087a35c004635b5bfa159f15f4a9564/sqlty-0.6.0-cp315-abi3.abi3t-musllinux_1_2_aarch64.whl", hash = "sha256:2af0a4e8631414f1fd304f0b2f6058d04f60ce9e612458717aa6c879d6744701", size = 16280858, upload-time = "2026-11-15T22:20:56.706Z" },
+    { url = "https://files.pythonhosted.org/packages/43/b0/8f82cffdb099e47c9c6605ce2f121246882bb42b9356120f1cf0fea0a272/sqlty-0.6.0-cp315-abi3.abi3t-musllinux_1_2_x86_64.whl", hash = "sha256:730b49121f1c841817f7cd6541f985dc3f1c6404477ebee16334451739df552c", size = 17461987, upload-time = "2026-11-15T22:20:59.227Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/94/80a9e12ccf8b14728c222d5886378102ff89f2f23ea512b0789c413d1685/sqlty-0.6.0-cp315-abi3.abi3t-win_amd64.whl", hash = "sha256:0538be99bdcbb72b7ebdcc5c6111463c426aef1d1d04a574040a3c4a11df4b4d", size = 18574722, upload-time = "2026-11-15T22:21:01.547Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/4b/4979783ca8794b1eace082e9167c223ef7233d041eadc8385755ded0c1ae/sqlty-0.6.0-cp315-abi3.abi3t-win_arm64.whl", hash = "sha256:6bf756deed88b9e03285c0dd2308964fc0437755c2dd3c1a3215726dda16efdd", size = 16062282, upload-time = "2026-11-15T22:21:04.025Z" },
 ]
 
 [[package]]
