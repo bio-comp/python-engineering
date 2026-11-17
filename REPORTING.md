@@ -1,0 +1,96 @@
+# Python Engineering — Scientific Reporting Contract (v0.1 proposal)
+
+**Authority:** Google Drive Python Engineering canonicals retain protocol, research state, interpretation, source qualification, recipes, and adoption decisions. This repository owns executable code, isolated fixtures, tests, and immutable run evidence. The report is a versioned evidence **snapshot**, not an alternative canonical.
+
+## Common artifact schema
+
+`Run` is the strict, frozen Pydantic v2 boundary (`schema_version=1.0`) that combines an experiment identity, conditions, environment, raw observations, evidence receipts, anchored criteria, essential gates, and *source-recorded* interpretation. It separates four information layers: untouched `run.json`, computed `analysis.json`, human-supplied interpretation, and the independent Drive adoption authority. Source-reported status/grade/gate assertions are **not externally attested** by this generator.
+
+The schema includes the experiment ID, protocol revision, unique run ID, timezone-aware execution time, hypothesis and prespecified criteria, exact baseline/candidate identity, configuration, source commit, execution commands, full Python/uv/tool versions, lockfile/`pyproject.toml` SHA-256, OS/arch/CI/runtime, hardware where applicable, seeds, agent/model identifiers where applicable, and evidence source/locator/receipt SHA-256. A value of `NOT MEASURED`, `NOT APPLICABLE`, `INSUFFICIENT EVIDENCE`, or `EXECUTION BLOCKED` is never coerced to numeric zero. Reject malformed, duplicate, missing-reference, and inconsistent inputs.
+
+Binary defect and duration measurements are supported. Additional heterogeneous result families, rich scanner diagnostics, verified source attestation, and agent cost telemetry require versioned extensions; do not claim they exist based on a scorecard heading.
+
+## Rubric proposal
+
+Each criterion provides a category, dimension, precise question, computed metric, measurement direction, four **prespecified strictly ordered thresholds**, five concrete observable anchors, minimum denominator, and required flag. Anchors 0–4 have these general semantics:
+
+| Score | Observable meaning |
+| ---: | --- |
+| 0 | Measured failure or unacceptable performance against the criterion |
+| 1 | Substantial deficiencies against a prespecified threshold |
+| 2 | Mixed/partial value at the next boundary |
+| 3 | Meets the prespecified requirement under the evaluated conditions |
+| 4 | Strong numerical result at strictest boundary, **not** automatically strong evidence |
+
+The score is determined mechanically: compare the measured metric with the four thresholds; apply higher-is-better or lower-is-better as defined. If sample size or metric is inadequate, abstain. **Evidence strength is separate:** independently reproduced, controlled local, small pilot, documentation only, anecdotal, or synthetic demonstration. A grade entered into the JSON is a claim to be independently audited, not an automatically certified source receipt.
+
+**Noncompensatory:** any essential gate that is false forces `FAILED - NONCOMPENSATORY`; unknown/no recorded gates means `UNKNOWN - NOT QUALIFIED`; all recorded passes never themselves authorize adoption. No composite scores or weighted rankings in v0.1. A future composite requires prespecified utilities/weights, adequate coverage, sensitivity analysis, metric comparability, and governed adoption authorization.
+
+### Category-specific scorecards
+
+`CATEGORY_PROFILES` documents seven classes (category questions, not preselected thresholds or adoption policy):
+
+| Category | Key questions and gate examples |
+| --- | --- |
+| Static analysis and typing | True *unique* catches beyond Ruff/mypy; labeled false positives; version/Pydantic compatibility; diagnostic quality; unsafe semantic fix gate |
+| pre-commit/prek/native/CI | Same underlying checks, staged-file correctness, failure propagation, cold/warm cost; false-green gate |
+| Durable workflow orchestration | Retries, crash/restart, idempotency, durable state and operational burden; lost job/duplicate side-effect gate |
+| Wheel/lockfile compatibility | Target ABI/tags/architecture, artifact availability, false assurances; deployment false-green gate |
+| Profiling | Tracing signal, perturbation, overhead and async completeness; changed functional output gate |
+| Citation/source verification | Reference existence, metadata, publication/retraction status, document identity, **actual source-to-claim support**; metadata is not claim support |
+| Coding-agent retrieval | Oracle-verified task outcomes, false claims, API/version evidence, rounds, cost and latency, regressions; unverified permissions gate |
+
+## Statistics and comparisons
+
+Implemented: TP/FP/TN/FN, exact denominators, precision/recall/specificity/accuracy, median duration, matched condition differences, discordant correctness counts and candidate-only positive detections. Pairing requires equal `(case_id, repetition, seed)` and consistent reference oracle. Missing denominators return null; Markdown/PDF show `NOT MEASURED`. Full-precision arithmetic precedes display rounding.
+
+**No automatic p-values, confidence intervals, bootstraps, population efficacy claims, multiple-comparison correction, or causal interpretation.** The synthetic fixture does not establish independent task observations. `compare-runs` rejects different experiment IDs/protocol revisions/rubric revisions/conditions but does **not** certify exchangeable task populations. Inferential-methodology decisions belong to the relevant authoritative protocol / `llm_evaluation`.
+
+## Report and PDF specification
+
+Every output comes from one validated `Run` and shared derived `Analysis` and `TableSpec` objects.
+
+**PDF page 1:** title, experiment/run/version/date/status, source-reported interpretation/disposition, gate status, limitations, and baseline/candidate result table. **Page 2:** hypothesis/design/criteria and exact provenance matrices. **Subsequent pages:** paired data, gates, individual rubric scores and anchors, raw per-case evidence, source references, a standardized experiment checklist, reproduction commands, and explicit boundaries.
+
+For tables: ReportLab 4.5.1 `LongTable`, fixed column proportions, wrapped selectable text, repeating headers, considered row separation, subdued banding, precise units, PDF links, page numbering, rubric version and consistent precision. The build deliberately exercises a 130-row multipage table and long wrapped evidence strings. Official tables reference: https://docs.reportlab.com/reportlab/userguide/ch7_tables/.
+
+**PDF renderer decision is provisional engineering judgment.** ReportLab enables a Python-only table/pagination implementation with deterministic output tested here. Typst (https://typst.app/docs/) offers typesetting, but adds an external toolchain; WeasyPrint (https://doc.courtbouillon.org/weasyprint/) offers CSS-driven layouts with additional runtime/font dependencies. This project has **not** completed controlled comparative benchmarks of renderers. Unicode/font coverage, accessibility audits, vector plotting, landscape layouts and unusual long-token stress remain unqualified.
+
+## Reproducible commands
+
+From the exact repository checkout, after `uv python install 3.14.10` and `uv sync --locked`:
+
+```bash
+uv run --locked python -m python_engineering.reporting validate-run examples/synthetic_900.json
+uv run --locked python -m python_engineering.reporting score-run examples/synthetic_900.json
+uv run --locked python -m python_engineering.reporting compare-runs \
+    examples/synthetic_900.json examples/synthetic_900.json
+uv run --locked python -m python_engineering.reporting build-report \
+    examples/synthetic_900.json /tmp/pyeng-e900-regenerated
+uv run --locked python -c 'from python_engineering.reporting.models import Run; print(Run.model_json_schema())'
+```
+
+`build-report` requires a **new, nonexistent** output directory and never silently overwrites observations. Bundle: `run.json` (original bytes), `analysis.json`, `summary.md`, `report.md`, `report.pdf`, `manifest.json` (SHA-256 for each artifact, input, rubric/schema/generator version and source-commit identity).
+
+`examples/synthetic_900.json` (130 synthetic recorded observations) and `examples/synthetic_901.json` (blocked, unmeasured) are explicitly **not real tool experiments**; `E-900/E-901` are reserved only for demonstrator fixtures, not Drive-registered experimental IDs. Regenerating the synthetic source generator produces a *new execution timestamp*; regenerate a byte-identical report from the already frozen `run.json` instead. Automated PDF invariance and text/pagination/link tests guard reproducibility.
+
+Core verification (repository's existing quality gates; no weakening):
+
+```bash
+uv lock --check
+uv run --locked ruff check --no-fix .
+uv run --locked ruff format --check .
+uv run --locked mypy src tests
+uv run --locked pytest --randomly-seed=101 --cov=python_engineering --cov-branch --cov-report=term-missing -q
+uv build
+```
+
+The user-provided source, tool versions, commands and external evidence should be independently confirmed before publication; credential-pattern checks reduce but do not eliminate disclosure risk.
+
+## Qualification boundaries and follow-up
+
+**Implemented:** strict schema validation, binary/duration/pair descriptive scoring, gate precedence, category prompts, deterministic Markdown/PDF, searchable wrapped multipage tables, immutable hashes and frozen synthetic demo. **Not qualified/implemented:** independent empirical tool comparison, precise calibrated evidence grades, trusted/attested environment capture, statistics beyond descriptive metrics, composite ranking, broad heterogeneous telemetry, real E-001/E-005/E-010/E-011/E-013/E-014/E-015 imports, or a marimo viewer. There is no measured multi-run dataset yet that warrants a marimo interface.
+
+**Canonical reconciliation proposal only — no Drive writes:** after independent code review, register this *reporting implementation status* as an artifact cross-reference in `EXPERIMENTS.md` and a proposed reproducible workflow in `RECIPES.md`; qualify renderer source and applicability in `SOURCE_INDEX.md` after independent assessment. Do not change any tool lifecycle/`CURRENT_PRACTICES.md` or treat an unreviewed report as a decision. A future accepted reporting policy would require an explicit `DECISIONS.md` entry.
+
+**Next step:** publish draft PR; independent Code Review & Quality on a pinned head and base; address findings in the same PR; separately seek merge authorization. Protected application repositories and installed skills remain untouched.
