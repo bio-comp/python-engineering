@@ -1,0 +1,14 @@
+{
+  "acceptance_contract": "After validator must return self and reject invalid order",
+  "exact_version": "2.14.1",
+  "fixture_sha256": "edd89001432ed9bf5b49a5417bdf7892f00d698f3caffb358a73d90e4128c8cf",
+  "oracle_id": "pydantic-after-v1",
+  "oracle_sha256": "1afef45acc950dae0507cecb0e5b6e416f83a12af24c1583f98d626e8a6b7df3",
+  "package": "pydantic",
+  "permitted_files": [
+    "solution.py"
+  ],
+  "python_version": "3.14.10",
+  "task_id": "e010-pydantic-after",
+  "tier": "calibration"
+}

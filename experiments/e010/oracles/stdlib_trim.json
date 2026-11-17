@@ -1,0 +1,1 @@
+{"oracle_id":"stdlib-strip-v1","cases":[{"case_id":"padded","expected":"north"},{"case_id":"already_trimmed","expected":"cedar"},{"case_id":"empty","expected":""},{"case_id":"unicode","expected":"rivet"}]}

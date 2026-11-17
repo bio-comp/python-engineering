@@ -1,0 +1,1 @@
+{"cases":[{"case_id":"padded","input":"  north \n"},{"case_id":"already_trimmed","input":"cedar"},{"case_id":"empty","input":"\t  "},{"case_id":"unicode","input":"\u2003rivet\u2002"}],"contract":"Apply Python str.strip() to each input without case folding or internal whitespace normalization."}

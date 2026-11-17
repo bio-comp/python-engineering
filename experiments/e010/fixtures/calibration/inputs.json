@@ -1,0 +1,1 @@
+{"cases":[{"case_id":"valid_order","left":1,"right":2},{"case_id":"invalid_order","left":2,"right":1}],"contract":"Pydantic 2.14.1 model_validator(mode='after') must return self and reject left >= right."}
