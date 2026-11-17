@@ -378,8 +378,8 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.platypus import (
+        CondPageBreak,
         HRFlowable,
-        KeepTogether,
         LongTable,
         PageBreak,
         Paragraph,
@@ -577,7 +577,10 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
         Paragraph("Evidence and scoring", title_style),
     ]
     for spec in report_tables(run, analysis)[2:]:
-        story.append(KeepTogether([Paragraph(plain(spec.title), heading_style), Spacer(1, 2)]))
+        # Reserve room for both the heading and at least one table header/data row.
+        # A KeepTogether around the heading alone produces orphaned section titles.
+        story.append(CondPageBreak(110))
+        story.append(Paragraph(plain(spec.title), heading_style))
         story.append(build_table(spec))
     story += [
         Paragraph("Interpretation and boundaries", heading_style),

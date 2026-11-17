@@ -211,6 +211,9 @@ def test_pdf_paginated_selectable_and_links(tmp_path: Path) -> None:
     assert "Observed execution provenance" not in page_texts[0]
     assert any("Git commit" in page for page in page_texts)
     assert sum("Observation / case" in page for page in page_texts) >= 2
+    for text_page in page_texts:
+        if "Noncompensatory acceptance gates" in text_page:
+            assert "Gate\nOutcome" in text_page
     assert all(f"Page {i}" in page for i, page in enumerate(page_texts, 1))
     assert "0.900" in "".join(page_texts)
     links = []
