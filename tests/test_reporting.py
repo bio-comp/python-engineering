@@ -132,15 +132,14 @@ def test_passed_gate_requires_a_real_receipt(demo: Run) -> None:
         _validate(raw)
 
 
-def test_conflicting_paired_truth_rejected_during_analysis(demo: Run) -> None:
+def test_conflicting_paired_truth_rejected_during_validation(demo: Run) -> None:
     raw = mutant(demo)
     obs = raw["observations"]
     assert isinstance(obs, list)
     assert isinstance(obs[1], dict)
     obs[1]["expected_defect"] = not obs[1]["expected_defect"]
-    changed = _validate(raw)
-    with pytest.raises(ValueError, match="paired oracle conflict"):
-        analyze(changed)
+    with pytest.raises(ValidationError, match="reference-oracle conflict"):
+        _validate(raw)
 
 
 def test_score_is_mechanical_not_an_efficacy_or_evidence_grade_claim(demo: Run) -> None:
@@ -193,7 +192,7 @@ def test_immutable_output_bundle_and_sha256(tmp_path: Path) -> None:
     assert build_report(MEASURED, target) == target / "manifest.json"
     manifest = json.loads((target / "manifest.json").read_text())
     assert manifest["synthetic_demonstration"] is True
-    assert manifest["generator_version"] == "0.1.0"
+    assert manifest["generator_version"] == "0.2.0"
     assert manifest["input_sha256"] == hashlib.sha256(MEASURED.read_bytes()).hexdigest()
     for name, digest in manifest["files_sha256"].items():
         assert hashlib.sha256((target / name).read_bytes()).hexdigest() == digest

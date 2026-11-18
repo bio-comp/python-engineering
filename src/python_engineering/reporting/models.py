@@ -241,9 +241,21 @@ class Run(Contract):
             raise ValueError("duplicate criterion ID")
         if len({g.gate_id for g in self.gates}) != len(self.gates):
             raise ValueError("duplicate gate ID")
+        oracle_by_case: dict[str, bool] = {}
         for item in self.observations:
             if item.evidence_id not in evidence_ids:
                 raise ValueError(f"observation refers to unknown evidence {item.evidence_id}")
+            # The case ID denotes a fixed fixture and fixed independent reference truth.
+            # Repetitions/seeds may change predictions, never the case's oracle.
+            if item.expected_defect is not None:
+                known = oracle_by_case.get(item.case_id)
+                if known is not None and known != item.expected_defect:
+                    raise ValueError(
+                        f"reference-oracle conflict for case_id={item.case_id!r}: "
+                        "expected_defect differs across conditions or repetitions; "
+                        "use distinct case IDs for distinct oracle truths"
+                    )
+                oracle_by_case[item.case_id] = item.expected_defect
         for gate in self.gates:
             if any(ref not in evidence_ids for ref in gate.evidence_ids):
                 raise ValueError(f"gate {gate.gate_id} refers to unknown evidence")

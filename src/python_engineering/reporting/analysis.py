@@ -70,6 +70,9 @@ class Analysis(Contract):
     paired: PairedMetrics
     criteria: tuple[CriterionResult, ...]
     essential_gate_state: str
+    required_criteria_state: str
+    unscored_required_criteria: tuple[str, ...]
+    evaluation_readiness: str
     statistical_scope: str = (
         "Descriptive counts, proportions, and medians only; no confidence "
         "intervals/p-values without an independently specified sampling design."
@@ -115,8 +118,6 @@ def paired_metrics(observations: tuple[Observation, ...]) -> PairedMetrics:
     baseline_wins = candidate_wins = both_correct = both_wrong = unique_tp = 0
     for key in pairs:
         b, c = by_condition["baseline"][key], by_condition["candidate"][key]
-        if b.expected_defect != c.expected_defect:
-            raise ValueError("paired oracle conflict for identical fixture/repetition/seed")
         b_ok = b.expected_defect == b.detected_defect
         c_ok = c.expected_defect == c.detected_defect
         if b_ok and c_ok:
@@ -233,10 +234,35 @@ def analyze(run: Run) -> Analysis:
         gate_state = "UNKNOWN - NOT QUALIFIED"
     else:
         gate_state = "ALL RECORDED GATES PASSED - ADOPTION STILL REQUIRES AUTHORITY"
+    results = tuple(_criterion(rule, run, baseline, candidate, paired) for rule in run.criteria)
+    missing_required = tuple(
+        result.criterion_id
+        for rule, result in zip(run.criteria, results, strict=True)
+        if rule.required and result.score is None
+    )
+    if not any(rule.required for rule in run.criteria):
+        criterion_state = "NOT SPECIFIED - NO REQUIRED CRITERIA"
+    elif missing_required:
+        criterion_state = "INCOMPLETE - UNSCORED REQUIRED CRITERIA"
+    else:
+        criterion_state = "COMPLETE - ALL REQUIRED CRITERIA SCORED"
+    if any(g.passed is False for g in run.gates):
+        readiness = "BLOCKED - ESSENTIAL GATE FAILED"
+    elif any(g.passed is None for g in run.gates) or not run.gates:
+        readiness = "INCOMPLETE - ESSENTIAL GATES UNKNOWN"
+    elif criterion_state != "COMPLETE - ALL REQUIRED CRITERIA SCORED":
+        readiness = "INCOMPLETE - REQUIRED MEASUREMENTS"
+    elif run.synthetic_demonstration:
+        readiness = "INCOMPLETE - SYNTHETIC DEMONSTRATION"
+    else:
+        readiness = "RECORDED REQUIREMENTS MET - NO ADOPTION INFERRED"
     return Analysis(
         baseline=baseline,
         candidate=candidate,
         paired=paired,
-        criteria=tuple(_criterion(rule, run, baseline, candidate, paired) for rule in run.criteria),
+        criteria=results,
         essential_gate_state=gate_state,
+        required_criteria_state=criterion_state,
+        unscored_required_criteria=missing_required,
+        evaluation_readiness=readiness,
     )

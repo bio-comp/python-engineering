@@ -34,3 +34,10 @@ uv run --locked python -m python_engineering.reporting build-report examples/syn
 
 ReportLab is a tested implementation dependency for this report renderer. Other proposed
 PDF approaches and optional marimo exploration are not yet empirically qualified.
+
+Reporting R1 corrections (generator 0.2.0) add long-cell PDF continuation,
+atomic no-overwrite publication, matched-case comparisons, required-measurement
+completeness, explicit root-confined receipt checks, Unicode font-repertoire
+checks, and observation-linked independent-grade attribution. Historical E-900/E-901
+synthetic artifacts remain frozen at generator 0.1.0; publish new reports
+under new paths. See REPORTING.md for the exact corrected contracts.

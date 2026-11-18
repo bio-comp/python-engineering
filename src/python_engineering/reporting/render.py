@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -9,6 +10,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 from python_engineering.reporting import REPORT_GENERATOR_VERSION
 from python_engineering.reporting.analysis import Analysis
+from python_engineering.reporting.integrity import ReceiptCheck
 from python_engineering.reporting.models import Run
 
 
@@ -55,7 +57,9 @@ def _metrics_table(analysis: Analysis) -> TableSpec:
     )
 
 
-def report_tables(run: Run, analysis: Analysis) -> tuple[TableSpec, ...]:
+def report_tables(
+    run: Run, analysis: Analysis, receipt_checks: tuple[ReceiptCheck, ...] = ()
+) -> tuple[TableSpec, ...]:
     env = run.environment
     condition = TableSpec(
         "Exact experimental conditions",
@@ -179,18 +183,35 @@ def report_tables(run: Run, analysis: Analysis) -> tuple[TableSpec, ...]:
         or (("NONE", "-", "NOT MEASURED", "-", "-"),),
         (0.22, 0.21, 0.18, 0.18, 0.21),
     )
+    receipt_status = {check.evidence_id: check.status.value for check in receipt_checks}
     evidence = TableSpec(
         "Evidence receipts and independent/source strength",
-        ("Receipt", "Strength", "Identity / locator / note"),
+        ("Receipt", "Declared grade / local integrity", "Identity / locator / note"),
         tuple(
-            (e.evidence_id, e.grade.value, f"{e.source}; {e.locator}; {e.note}")
+            (
+                e.evidence_id,
+                f"{e.grade.value}; {receipt_status.get(e.evidence_id, 'UNVERIFIED - NOT CHECKED')}",
+                f"{e.source}; {e.locator}; {e.note}",
+            )
             for e in run.evidence
         )
         or (("NONE", "NOT MEASURED", "No evidence supplied"),),
-        (0.15, 0.22, 0.63),
+        (0.15, 0.29, 0.56),
     )
-    independent = any(e.grade.value == "independently_reproduced" for e in run.evidence)
     measured = analysis.baseline.measured_rows + analysis.candidate.measured_rows
+    receipt_grades = {e.evidence_id: e.grade.value for e in run.evidence}
+    linked_grades = {
+        receipt_grades[o.evidence_id] for o in run.observations if o.state.value == "MEASURED"
+    }
+    independent_grades = "independently_reproduced" in linked_grades
+    if run.synthetic_demonstration or not measured:
+        independent_status = "NOT MEASURED"
+    elif independent_grades and len(linked_grades) == 1:
+        independent_status = "SOURCE DECLARED - NOT ATTESTED"
+    elif independent_grades:
+        independent_status = "MIXED SOURCE GRADES - NOT ATTESTED"
+    else:
+        independent_status = "NOT ESTABLISHED"
     checklist = TableSpec(
         "Standard experimental evidence checklist",
         ("Control", "Assessment", "Scope / caveat"),
@@ -240,9 +261,20 @@ def report_tables(run: Run, analysis: Analysis) -> tuple[TableSpec, ...]:
                 "Missing/failed gates override any favorable score",
             ),
             (
+                "Required-criterion completeness",
+                analysis.required_criteria_state,
+                "Unscored required: " + (", ".join(analysis.unscored_required_criteria) or "none"),
+            ),
+            (
+                "Overall evidence readiness",
+                analysis.evaluation_readiness,
+                "Recorded gates and required measurements are separate; no adoption inferred",
+            ),
+            (
                 "Independent reproduction",
-                "PRESENT" if independent and not run.synthetic_demonstration else "NOT MEASURED",
-                "Local synthetic checks do not establish efficacy",
+                independent_status,
+                "Only measured observations with linked declared independent-grade receipts "
+                "count; a declared grade is not independent authentication",
             ),
             (
                 "Interpretation / limitations",
@@ -299,7 +331,13 @@ def _markdown_table(table: TableSpec) -> str:
     return "\n".join((f"### {table.title}", "", header, rule, *rows, ""))
 
 
-def render_markdown(run: Run, analysis: Analysis, *, detailed: bool) -> str:
+def render_markdown(
+    run: Run,
+    analysis: Analysis,
+    *,
+    detailed: bool,
+    receipt_checks: tuple[ReceiptCheck, ...] = (),
+) -> str:
     e = run.experiment
     banner = (
         "**SYNTHETIC DEMONSTRATION - NOT EMPIRICAL TOOL EVIDENCE**"
@@ -328,6 +366,10 @@ def render_markdown(run: Run, analysis: Analysis, *, detailed: bool) -> str:
         "",
         f"**Essential gates:** {analysis.essential_gate_state}",
         "",
+        f"**Required criteria:** {analysis.required_criteria_state}",
+        "",
+        f"**Evaluation evidence readiness:** {analysis.evaluation_readiness}",
+        "",
         f"**Disposition (recorded, not generated):** {run.interpretation.disposition}",
         "",
         f"**Applicability:** {run.interpretation.applicability}",
@@ -337,7 +379,7 @@ def render_markdown(run: Run, analysis: Analysis, *, detailed: bool) -> str:
         "## Key measured results",
         "",
         _markdown_table(_metrics_table(analysis)),
-        _markdown_table(report_tables(run, analysis)[3]),
+        _markdown_table(report_tables(run, analysis, receipt_checks)[3]),
         "## Limitations",
         "",
         *[f"- {x}" for x in run.interpretation.limitations],
@@ -347,7 +389,7 @@ def render_markdown(run: Run, analysis: Analysis, *, detailed: bool) -> str:
     ]
     if detailed:
         lines += ["## Complete evidence and reproducibility record", ""]
-        for table in report_tables(run, analysis):
+        for table in report_tables(run, analysis, receipt_checks):
             lines.extend([_markdown_table(table), ""])
         lines += [
             "## Reproduction and governance boundary",
@@ -371,8 +413,91 @@ def render_markdown(run: Run, analysis: Analysis, *, detailed: bool) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
+def pdf_font_identity(font_path: Path | None = None) -> tuple[Path, str]:
+    """Return the bundled default or explicitly selected font and exact byte identity."""
+    import reportlab
+
+    selected = (
+        font_path
+        if font_path is not None
+        else Path(reportlab.__file__).parent / "fonts" / "Vera.ttf"
+    )
+    if not selected.is_file():
+        raise ValueError(f"PDF font is not a readable file: {selected}")
+    return selected, hashlib.sha256(selected.read_bytes()).hexdigest()
+
+
+def _check_pdf_repertoire(
+    run: Run, analysis: Analysis, *, cmap: set[int], receipt_checks: tuple[ReceiptCheck, ...]
+) -> None:
+    """Fail explicitly on missing glyphs rather than rendering replacement squares."""
+    e = run.experiment
+    displayed = [
+        e.title,
+        e.experiment_id,
+        e.run_id,
+        e.protocol_revision,
+        e.executed_at.isoformat(),
+        e.status.value,
+        e.research_question,
+        e.hypothesis,
+        e.prespecified_criteria,
+        run.interpretation.summary,
+        run.interpretation.disposition,
+        run.interpretation.applicability,
+        *run.interpretation.limitations,
+        run.interpretation.proposed_next_step,
+        analysis.essential_gate_state,
+        analysis.required_criteria_state,
+        analysis.evaluation_readiness,
+    ]
+    for table in report_tables(run, analysis, receipt_checks):
+        displayed.extend((table.title, *table.headers))
+        displayed.extend(value for row in table.rows for value in row)
+    unsupported = {
+        char
+        for text in displayed
+        for char in text
+        if char not in "\n\t\r" and ord(char) not in cmap
+    }
+    if unsupported:
+        names = ", ".join(f"U+{ord(c):04X} ({c})" for c in sorted(unsupported))
+        raise ValueError(
+            "PDF font does not support input glyphs: "
+            + names
+            + "; choose an explicitly approved TrueType font with --font"
+        )
+
+
+def render_pdf(
+    run: Run,
+    analysis: Analysis,
+    target: Path,
+    *,
+    receipt_checks: tuple[ReceiptCheck, ...] = (),
+    font_path: Path | None = None,
+) -> None:
     """Vector/selectable PDF with controlled-width, wrapped, repeated-header tables."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    selected_font, font_sha256 = pdf_font_identity(font_path)
+    name = "PE-" + font_sha256[:14]
+    normal = TTFont(name, str(selected_font))
+    cmap = set(normal.face.charToGlyph)
+    _check_pdf_repertoire(run, analysis, cmap=cmap, receipt_checks=receipt_checks)
+    pdfmetrics.registerFont(normal)
+    if font_path is None:
+        import reportlab
+
+        bold_path = Path(reportlab.__file__).parent / "fonts" / "VeraBd.ttf"
+        bold = name + "-Bold"
+        pdfmetrics.registerFont(TTFont(bold, str(bold_path)))
+    else:
+        # Deliberate single-face rendering when the caller supplies only one font.
+        bold = name
+    pdfmetrics.registerFontFamily(name, normal=name, bold=bold, italic=name, boldItalic=bold)
+
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_LEFT
     from reportlab.lib.pagesizes import letter
@@ -398,7 +523,7 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
     title_style = ParagraphStyle(
         "ResearchTitle",
         parent=styles["Title"],
-        fontName="Helvetica-Bold",
+        fontName=bold,
         fontSize=21,
         leading=27,
         textColor=navy,
@@ -408,7 +533,7 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
     label_style = ParagraphStyle(
         "ResearchKicker",
         parent=styles["Normal"],
-        fontName="Helvetica-Bold",
+        fontName=bold,
         fontSize=8.4,
         leading=12,
         textColor=teal,
@@ -417,7 +542,7 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
     heading_style = ParagraphStyle(
         "ResearchHeading",
         parent=styles["Heading2"],
-        fontName="Helvetica-Bold",
+        fontName=bold,
         fontSize=12.2,
         leading=16,
         textColor=navy,
@@ -427,7 +552,7 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
     body_style = ParagraphStyle(
         "ResearchBody",
         parent=styles["BodyText"],
-        fontName="Helvetica",
+        fontName=name,
         fontSize=9.0,
         leading=13.5,
         textColor=slate,
@@ -448,7 +573,7 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
     header_style = ParagraphStyle(
         "ResearchTableHeader",
         parent=cell_style,
-        fontName="Helvetica-Bold",
+        fontName=bold,
         fontSize=7.7,
         leading=10.7,
         textColor=white,
@@ -483,7 +608,7 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
         canvas.saveState()
         canvas.setStrokeColor(line)
         canvas.line(48, 39, letter[0] - 48, 39)
-        canvas.setFont("Helvetica", 7.5)
+        canvas.setFont(name, 7.5)
         canvas.setFillColor(slate)
         canvas.drawString(
             48,
@@ -523,6 +648,7 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
             repeatRows=1,
             hAlign="LEFT",
             splitByRow=1,
+            splitInRow=1,
             spaceAfter=10,
         )
         table.setStyle(
@@ -554,6 +680,8 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
         paragraph("Study status", e.status.value),
         paragraph("Interpretation", run.interpretation.summary),
         paragraph("Essential gates", analysis.essential_gate_state),
+        paragraph("Required criteria", analysis.required_criteria_state),
+        paragraph("Evidence readiness", analysis.evaluation_readiness),
         paragraph("Recorded disposition", run.interpretation.disposition),
         paragraph("Applicability", run.interpretation.applicability),
         paragraph("Evidence limitation", "; ".join(run.interpretation.limitations)),
@@ -571,12 +699,12 @@ def render_pdf(run: Run, analysis: Analysis, target: Path) -> None:
         paragraph("Research question", e.research_question),
         paragraph("Hypothesis", e.hypothesis),
         paragraph("Prespecified criteria", e.prespecified_criteria),
-        build_table(report_tables(run, analysis)[0]),
-        build_table(report_tables(run, analysis)[1]),
+        build_table(report_tables(run, analysis, receipt_checks)[0]),
+        build_table(report_tables(run, analysis, receipt_checks)[1]),
         PageBreak(),
         Paragraph("Evidence and scoring", title_style),
     ]
-    for spec in report_tables(run, analysis)[2:]:
+    for spec in report_tables(run, analysis, receipt_checks)[2:]:
         # Reserve room for both the heading and at least one table header/data row.
         # A KeepTogether around the heading alone produces orphaned section titles.
         story.append(CondPageBreak(110))
