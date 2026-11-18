@@ -53,6 +53,47 @@ mypy strict with and without Pydantic plugin are separate arms. The temporary
 No experimental stdout/stderr or host paths are checked into Git; review raw
 receipts before sharing to ensure no accidental disclosures.
 
+### Static-checker environment contract (R2)
+
+All six checker arms, including mypy with the Pydantic plugin, and the
+Pyright/basedpyright `--verbose` import-resolution probes receive the *same*
+explicit environment built by `_checker_environment()`. No checker inherits
+arbitrary parent-process variables. On macOS/Linux the entire allowlist is:
+
+- `PATH=<active-venv>/bin:<os.defpath>` — finds executables in the active,
+  locked environment before the OS's built-in default system directories;
+  inherited `PATH` is **not** forwarded.
+- `VIRTUAL_ENV=<active-venv>` — pins the checker-visible virtual environment.
+- `HOME=<temporary-run>/checker-home` and
+  `XDG_CONFIG_HOME`/`XDG_CACHE_HOME` underneath that directory — avoid
+  ambient user configuration and caches.
+- `PYTHONNOUSERSITE=1` and `PYTHONDONTWRITEBYTECODE=1` — disable user site
+  imports and bytecode side effects.
+
+Windows additionally requires `SYSTEMROOT` for OS process operation, and
+fails explicitly if unavailable. No credentials, arbitrary `PYTHONPATH`,
+`MYPYPATH`, `NODE_OPTIONS`, `UV_*`, dotenv or other inherited
+configuration values are forwarded. Checker executables are resolved from
+the active venv's scripts directory rather than from an inherited `PATH`.
+Unsupported environments are not silently substituted. The policy is
+versioned `e005-checker-environment-v1`.
+
+The JSON measurement schema is deliberately versioned `e005-matrix-v2`
+(additive extension). `checker_environment` records the exact nonsecret
+applied name/value mapping, policy identifier, and SHA-256 of its canonical
+JSON representation. Each checker/probe receipt includes the same environment
+digest to prove the harness *intended* to use that policy for every invocation;
+negative-control tests instrument actual subprocess calls. The digest is a
+local replay fingerprint, **not cryptographic external attestation**. Absolute
+temporary paths vary across runs; preserve the environment receipt alongside
+each run's command, cwd, config and output receipts. Never publish raw checker
+outputs without reviewing them for unintended disclosure.
+
+R2 falsifier: two incompatible `demo_stubs.pyi` implementations
+(`make_value() -> int` versus `-> str`) change mypy diagnostics when
+`MYPYPATH` is inherited, but cannot alter diagnostics under this explicit
+policy. The 16 frozen Pydantic cases and their expected outcomes are unchanged.
+
 The runtime environment is isolated from inherited settings variables and
 Python optimization flags. The Pyright family uses the **active virtual
 environment** (not the resolved system-interpreter symlink) and fails if its

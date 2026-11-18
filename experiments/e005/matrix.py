@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import sysconfig
@@ -63,6 +62,16 @@ class ConfigReceipt(BaseModel):
     contents: str
 
 
+class CheckerEnvironment(BaseModel):
+    """Applied, nonsecret environment for every static checker and probe."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    policy: Literal["e005-checker-environment-v1"]
+    variables: dict[str, str]
+    sha256: str
+
+
 class EnvironmentProbe(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -70,6 +79,7 @@ class EnvironmentProbe(BaseModel):
     command: tuple[str, ...]
     exit_code: int
     selected_site_packages: str
+    checker_environment_sha256: str
     stdout: str
     stderr: str
     stdout_sha256: str
@@ -86,6 +96,7 @@ class ToolResult(BaseModel):
     cwd: str
     configs: tuple[ConfigReceipt, ...]
     environment_probe: EnvironmentProbe | None
+    checker_environment_sha256: str
     stdout: str
     stderr: str
     stdout_sha256: str
@@ -112,6 +123,8 @@ class RuntimeResult(BaseModel):
 class MatrixReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    schema_version: Literal["e005-matrix-v2"]
+    checker_environment: CheckerEnvironment
     python_version: str
     python_executable: str
     venv_path: str
@@ -323,10 +336,50 @@ def _parse_text(
 
 
 def _exe(name: str) -> str:
-    found = shutil.which(name)
-    if found is None:
-        raise RuntimeError(f"Required checker executable unavailable: {name}")
-    return found
+    # Only execute binaries installed in the locked, validated active venv.
+    # An inherited PATH cannot substitute a different checker executable.
+    scripts = Path(sys.prefix) / ("Scripts" if sys.platform == "win32" else "bin")
+    path = scripts / (name + ".exe" if sys.platform == "win32" else name)
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise RuntimeError(f"Pinned venv checker executable unavailable: {path}")
+    return str(path)
+
+
+def _checker_environment(root: Path) -> CheckerEnvironment:
+    """Exclude ambient import/config overrides and credentials for all analyzers.
+
+    Only explicit nonsecret values are supplied: pinned venv scripts, OS
+    default executable search path, an isolated HOME/config/cache directory,
+    and Python flags suppressing user-site/bytecode side effects.
+    """
+    home = root / "checker-home"
+    home.mkdir(mode=0o700, parents=True, exist_ok=True)
+    prefix = Path(sys.prefix).absolute()
+    scripts = prefix / ("Scripts" if sys.platform == "win32" else "bin")
+    variables = {
+        "PATH": os.pathsep.join((str(scripts), os.defpath)),
+        "VIRTUAL_ENV": str(prefix),
+        "HOME": str(home),
+        "XDG_CONFIG_HOME": str(home / ".config"),
+        "XDG_CACHE_HOME": str(home / ".cache"),
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    if sys.platform == "win32":
+        systemroot = os.environ.get("SYSTEMROOT")
+        if not systemroot:
+            raise RuntimeError("SYSTEMROOT is required for Windows subprocesses")
+        variables["SYSTEMROOT"] = systemroot
+    # No inherited PYTHONPATH/MYPYPATH/NODE_OPTIONS/UV_*/credentials/settings.
+    policy = "e005-checker-environment-v1"
+    identity = json.dumps(
+        {"policy": policy, "variables": variables}, sort_keys=True, separators=(",", ":")
+    )
+    return CheckerEnvironment(
+        policy="e005-checker-environment-v1",
+        variables=variables,
+        sha256=_sha(identity.encode()),
+    )
 
 
 def _receipt(path: Path, root: Path) -> ConfigReceipt:
@@ -337,10 +390,22 @@ def _receipt(path: Path, root: Path) -> ConfigReceipt:
 
 
 def _check_pyright_environment(
-    tool: str, executable: str, cwd: Path, site_packages: Path
+    tool: str,
+    executable: str,
+    cwd: Path,
+    site_packages: Path,
+    checker_environment: CheckerEnvironment,
 ) -> EnvironmentProbe:
     command = [executable, "--project", str(cwd / "pyrightconfig.json"), "--verbose"]
-    proc = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False, timeout=90)
+    proc = subprocess.run(
+        command,
+        cwd=cwd,
+        env=checker_environment.variables,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=90,
+    )
     combined = proc.stdout + "\n" + proc.stderr
     if proc.returncode not in {0, 1}:
         raise RuntimeError(f"{tool}: environment probe failed with rc {proc.returncode}")
@@ -353,6 +418,7 @@ def _check_pyright_environment(
         command=tuple(command),
         exit_code=proc.returncode,
         selected_site_packages=str(site_packages),
+        checker_environment_sha256=checker_environment.sha256,
         stdout=proc.stdout,
         stderr=proc.stderr,
         stdout_sha256=_sha(proc.stdout.encode()),
@@ -366,10 +432,19 @@ def _invoke(
     files: dict[Path, str],
     cwd: Path,
     configs: tuple[ConfigReceipt, ...],
+    checker_environment: CheckerEnvironment,
     environment_probe: EnvironmentProbe | None = None,
 ) -> ToolResult:
     start = perf_counter_ns()
-    proc = subprocess.run(args, cwd=cwd, text=True, capture_output=True, check=False, timeout=90)
+    proc = subprocess.run(
+        args,
+        cwd=cwd,
+        env=checker_environment.variables,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=90,
+    )
     elapsed = (perf_counter_ns() - start) / 1_000_000
     if proc.returncode not in {0, 1}:
         raise RuntimeError(
@@ -400,6 +475,7 @@ def _invoke(
         cwd=str(cwd),
         configs=configs,
         environment_probe=environment_probe,
+        checker_environment_sha256=checker_environment.sha256,
         stdout=proc.stdout,
         stderr=proc.stderr,
         stdout_sha256=_sha(proc.stdout.encode()),
@@ -645,10 +721,11 @@ def execute_matrix(root: Path) -> MatrixReport:
             ],
         ),
     ]
+    checker_environment = _checker_environment(root)
     result_list: list[ToolResult] = []
     for name, command in checks:
         probe = (
-            _check_pyright_environment(name, command[0], root, site_packages)
+            _check_pyright_environment(name, command[0], root, site_packages, checker_environment)
             if name in {"pyright", "basedpyright"}
             else None
         )
@@ -659,12 +736,15 @@ def execute_matrix(root: Path) -> MatrixReport:
                 filemap,
                 root,
                 tuple(_receipt(path, root) for path in config_paths[name]),
+                checker_environment,
                 environment_probe=probe,
             )
         )
     results = tuple(result_list)
     revision, dirty = _git_revision()
     return MatrixReport(
+        schema_version="e005-matrix-v2",
+        checker_environment=checker_environment,
         python_version=".".join(str(part) for part in sys.version_info[:3]),
         python_executable=sys.executable,
         venv_path=str(venv_path),

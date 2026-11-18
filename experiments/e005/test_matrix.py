@@ -347,7 +347,14 @@ def test_exit_status_must_agree_with_normalized_diagnostics(
         ),
     )
     with pytest.raises(RuntimeError, match=r"no parsable errors|exited 0"):
-        matrix._invoke("mypy", ["fake-mypy"], {path.resolve(): "strict_valid"}, tmp_path, ())
+        matrix._invoke(
+            "mypy",
+            ["fake-mypy"],
+            {path.resolve(): "strict_valid"},
+            tmp_path,
+            (),
+            matrix._checker_environment(tmp_path),
+        )
 
 
 def test_pyrefly_stderr_count_must_agree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -366,7 +373,14 @@ def test_pyrefly_stderr_count_must_agree(tmp_path: Path, monkeypatch: pytest.Mon
         ),
     )
     with pytest.raises(RuntimeError, match="stderr error count disagrees"):
-        matrix._invoke("pyrefly", ["fake-pyrefly"], {path.resolve(): "strict_valid"}, tmp_path, ())
+        matrix._invoke(
+            "pyrefly",
+            ["fake-pyrefly"],
+            {path.resolve(): "strict_valid"},
+            tmp_path,
+            (),
+            matrix._checker_environment(tmp_path),
+        )
 
 
 def test_runtime_subprocess_malformed_payload_is_rejected(
@@ -411,4 +425,178 @@ def test_pyright_probe_rejects_wrong_site_packages(
             "fake-pyright",
             tmp_path,
             tmp_path / "expected" / "lib" / "site-packages",
+            matrix._checker_environment(tmp_path),
         )
+
+
+def test_r2_mypypath_import_override_is_not_an_implicit_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Independent R2 falsifier: two incompatible stubs, identical source/config."""
+    import os
+    import subprocess
+
+    import experiments.e005.matrix as matrix
+
+    source = tmp_path / "counterexample.py"
+    source.write_text(
+        "from demo_stubs import make_value\nvalue: int = make_value()\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "mypy.ini"
+    config.write_text("[mypy]\npython_version = 3.14\nstrict = True\n")
+    cmd = [
+        matrix._exe("mypy"),
+        "--config-file",
+        str(config),
+        "--no-incremental",
+        "--no-error-summary",
+        "--show-error-codes",
+        str(source),
+    ]
+    controlled = matrix._checker_environment(tmp_path)
+    files = {source.resolve(): "counterexample"}
+    outputs: list[tuple[int, str, str]] = []
+    unsanitized_outcomes: list[int] = []
+    for label, annotation in (("int", "int"), ("str", "str")):
+        stub_dir = tmp_path / label
+        stub_dir.mkdir()
+        (stub_dir / "demo_stubs.pyi").write_text(f"def make_value() -> {annotation}: ...\n")
+        monkeypatch.setenv("MYPYPATH", str(stub_dir))
+        monkeypatch.setenv("PYTHONPATH", str(stub_dir))
+        # Prove the old counterexample truly changes mypy under the same
+        # command/cwd/config, without forwarding the ambient test machine env.
+        untrusted = {**controlled.variables, "MYPYPATH": str(stub_dir)}
+        old = subprocess.run(
+            cmd,
+            cwd=tmp_path,
+            env=untrusted,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=90,
+        )
+        unsanitized_outcomes.append(old.returncode)
+
+        corrected = matrix._invoke(
+            "mypy",
+            cmd,
+            files,
+            tmp_path,
+            (matrix._receipt(config, tmp_path),),
+            controlled,
+        )
+        assert corrected.checker_environment_sha256 == controlled.sha256
+        assert corrected.command == tuple(cmd)
+        assert corrected.configs[0].sha256 == matrix._receipt(config, tmp_path).sha256
+        outputs.append((corrected.exit_code, corrected.stdout, corrected.stderr))
+    assert unsanitized_outcomes == [0, 1]
+    assert outputs[0] == outputs[1]
+    assert outputs[0][0] == 1  # Imported module is absent in controlled path.
+    assert "MYPYPATH" not in controlled.variables
+    assert "PYTHONPATH" not in controlled.variables
+    assert "MYPYPATH" not in os.environ or os.environ["MYPYPATH"] == str(stub_dir)
+    assert controlled.policy == "e005-checker-environment-v1"
+
+
+def test_r2_all_checkers_and_pyright_probes_use_identical_filtered_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import collections
+    import os
+    import subprocess
+    import sys
+
+    secret_marker = "E005_R2_SENSITIVE_VALUE_DO_NOT_PUBLISH"
+    monkeypatch.setenv("MYPYPATH", str(tmp_path / "untrusted-mypy"))
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "untrusted-python"))
+    monkeypatch.setenv("NODE_OPTIONS", "--require=/untrusted/extension.js")
+    monkeypatch.setenv("PYRIGHT_PYTHON_FORCE_VERSION", "0.0.0")
+    monkeypatch.setenv("E005_PRIVATE_TOKEN", secret_marker)
+    monkeypatch.setenv("HOME", secret_marker)
+    monkeypatch.setenv("PATH", secret_marker + os.pathsep + os.environ["PATH"])
+
+    called: list[tuple[str, dict[str, str] | None, bool]] = []
+    real_run = subprocess.run
+
+    def intercept(
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str] | None = None,
+        text: bool = True,
+        capture_output: bool = True,
+        check: bool = False,
+        timeout: int = 90,
+    ) -> subprocess.CompletedProcess[str]:
+        name = Path(args[0]).name
+        if name in {"mypy", "pyrefly", "pyright", "basedpyright", "ty"}:
+            assert env is not None
+            called.append((name, env.copy(), "--verbose" in args))
+        return real_run(
+            args,
+            cwd=cwd,
+            env=env,
+            text=True,
+            capture_output=capture_output,
+            check=check,
+            timeout=timeout,
+        )
+
+    monkeypatch.setattr(subprocess, "run", intercept)
+    report = execute_matrix(tmp_path)
+    counts = collections.Counter(tool for tool, _, _ in called)
+    assert counts == {
+        "mypy": 2,
+        "pyrefly": 1,
+        "pyright": 2,
+        "basedpyright": 2,
+        "ty": 1,
+    }
+    assert sum(probe for _, _, probe in called) == 2
+    controlled = report.checker_environment
+    assert controlled.policy == "e005-checker-environment-v1"
+    assert "E005_PRIVATE_TOKEN" not in controlled.variables
+    assert secret_marker not in report.model_dump_json()
+    for _, effective, _ in called:
+        assert effective == controlled.variables
+        assert effective is not None
+        for prohibited in (
+            "MYPYPATH",
+            "PYTHONPATH",
+            "NODE_OPTIONS",
+            "PYRIGHT_PYTHON_FORCE_VERSION",
+            "E005_PRIVATE_TOKEN",
+        ):
+            assert prohibited not in effective
+        assert effective["HOME"] != secret_marker
+        assert effective["PATH"] != secret_marker
+        assert effective["VIRTUAL_ENV"] == str(Path(sys.prefix).absolute())
+
+    assert report.schema_version == "e005-matrix-v2"
+    import hashlib
+
+    canonical = json.dumps(
+        {"policy": controlled.policy, "variables": controlled.variables},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert hashlib.sha256(canonical.encode()).hexdigest() == controlled.sha256
+    for checker in report.checkers:
+        assert checker.checker_environment_sha256 == controlled.sha256
+        if checker.environment_probe is not None:
+            assert checker.environment_probe.checker_environment_sha256 == controlled.sha256
+    assert report.fixture_sha256 == (
+        "35f2bdbfaa12e30d3af0c93fcb3dd84456cf5ad60d7d1c07e52fe38dfc95de08"
+    )
+
+
+def test_r2_checker_executable_is_from_active_venv() -> None:
+    import sys
+
+    import experiments.e005.matrix as matrix
+
+    for name in ("mypy", "pyrefly", "pyright", "basedpyright", "ty"):
+        executable = Path(matrix._exe(name))
+        assert executable.is_relative_to(Path(sys.prefix))
+        assert executable.is_file()
