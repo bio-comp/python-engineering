@@ -158,6 +158,12 @@ def measured_evidence_classification(run: Run) -> str:
         return "SYNTHETIC-ONLY MEASURED EVIDENCE"
     if synthetic:
         return "MIXED SYNTHETIC AND NONSYNTHETIC DECLARATIONS"
+    nonempirical = {EvidenceGrade.DOCUMENTATION, EvidenceGrade.ANECDOTAL}
+    if grades <= nonempirical:
+        return "NONEMPIRICAL-ONLY MEASURED DECLARATIONS - NOT ATTESTED"
+    if grades & nonempirical:
+        return "MIXED EMPIRICAL AND NONEMPIRICAL DECLARATIONS - NOT ATTESTED"
+    # Pilot/controlled/independent grades remain source declarations, not attestation.
     return "NONSYNTHETIC SOURCE DECLARATIONS - NOT ATTESTED"
 
 
@@ -305,6 +311,10 @@ def analyze(run: Run) -> Analysis:
         # A model_copy(update=...) can bypass Pydantic validators: analysis must
         # remain conservative independently of the public ingestion boundary.
         readiness = "INCOMPLETE - SYNTHETIC DEMONSTRATION"
+    elif classification == "NONEMPIRICAL-ONLY MEASURED DECLARATIONS - NOT ATTESTED":
+        readiness = "INCOMPLETE - NONEMPIRICAL MEASURED EVIDENCE"
+    elif classification == "MIXED EMPIRICAL AND NONEMPIRICAL DECLARATIONS - NOT ATTESTED":
+        readiness = "INCOMPLETE - MIXED EMPIRICAL AND NONEMPIRICAL EVIDENCE"
     else:
         readiness = "RECORDED REQUIREMENTS MET - NO ADOPTION INFERRED"
     return Analysis(

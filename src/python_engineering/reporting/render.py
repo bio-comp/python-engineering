@@ -254,6 +254,8 @@ def report_tables(
                     if analysis.evidence_classification.startswith("SYNTHETIC")
                     else "MIXED"
                     if analysis.evidence_classification.startswith("MIXED")
+                    else "NONEMPIRICAL"
+                    if analysis.evidence_classification.startswith("NONEMPIRICAL")
                     else "PRESENT"
                     if measured
                     else "NOT MEASURED"
@@ -368,10 +370,14 @@ def render_markdown(
     e = run.experiment
     banner = (
         "**MIXED SYNTHETIC AND NONSYNTHETIC SOURCE DECLARATIONS - NOT EMPIRICAL QUALIFICATION**"
-        if analysis.evidence_classification.startswith("MIXED")
+        if analysis.evidence_classification == "MIXED SYNTHETIC AND NONSYNTHETIC DECLARATIONS"
         else "**SYNTHETIC DEMONSTRATION - NOT EMPIRICAL TOOL EVIDENCE**"
         if run.synthetic_demonstration
         or analysis.evidence_classification == "SYNTHETIC-ONLY MEASURED EVIDENCE"
+        else "**NONEMPIRICAL SOURCE DECLARATIONS - NO EMPIRICAL QUALIFICATION**"
+        if analysis.evidence_classification.startswith("NONEMPIRICAL")
+        else "**MIXED EMPIRICAL / NONEMPIRICAL SOURCE DECLARATIONS - NOT QUALIFIED**"
+        if analysis.evidence_classification.startswith("MIXED EMPIRICAL")
         else "**EVIDENCE SNAPSHOT - DO NOT INFER QUALIFICATION OR ADOPTION**"
     )
     lines = [
@@ -475,6 +481,12 @@ def _check_pdf_repertoire(
 ) -> None:
     """Fail explicitly on missing glyphs rather than rendering replacement squares."""
     e = run.experiment
+    # Canvas.drawString receives footer metadata verbatim; unlike Paragraph,
+    # it does not normalize control characters, which corrupt PDF text content.
+    from unicodedata import category
+
+    if any(category(char) == "Cc" for char in run.rubric_revision):
+        raise ValueError("PDF footer contains control characters in rubric_revision")
     displayed = [
         e.title,
         e.experiment_id,
@@ -542,14 +554,18 @@ def render_pdf(
     selected_font, font_sha256 = pdf_font_identity(font_path)
     name = "PE-" + font_sha256[:14]
     normal = TTFont(name, str(selected_font))
-    cmap = set(normal.face.charToGlyph)
+    # Presence in charToGlyph is insufficient: some mapped code points point
+    # to glyph zero (.notdef) and render identically despite distinct text extraction.
+    cmap = {codepoint for codepoint, glyph in normal.face.charToGlyph.items() if glyph != 0}
     if font_path is None:
         import reportlab
 
         bold_path = Path(reportlab.__file__).parent / "fonts" / "VeraBd.ttf"
         bold = name + "-Bold"
         bold_font = TTFont(bold, str(bold_path))
-        bold_cmap = set(bold_font.face.charToGlyph)
+        bold_cmap = {
+            codepoint for codepoint, glyph in bold_font.face.charToGlyph.items() if glyph != 0
+        }
     else:
         # Deliberate single-face rendering when the caller supplies only one font.
         bold = name
@@ -754,10 +770,14 @@ def render_pdf(
         Spacer(1, 15),
         Paragraph(
             "MIXED SYNTHETIC / NONSYNTHETIC SOURCE DECLARATIONS - NOT QUALIFIED"
-            if analysis.evidence_classification.startswith("MIXED")
+            if analysis.evidence_classification == "MIXED SYNTHETIC AND NONSYNTHETIC DECLARATIONS"
             else "SYNTHETIC DATA: NOT A REAL TOOL RESULT"
             if run.synthetic_demonstration
             or analysis.evidence_classification == "SYNTHETIC-ONLY MEASURED EVIDENCE"
+            else "NONEMPIRICAL SOURCE DECLARATIONS: NO EMPIRICAL QUALIFICATION"
+            if analysis.evidence_classification.startswith("NONEMPIRICAL")
+            else "MIXED EMPIRICAL / NONEMPIRICAL SOURCE DECLARATIONS - NOT QUALIFIED"
+            if analysis.evidence_classification.startswith("MIXED EMPIRICAL")
             else "SOURCE-BOUNDED SNAPSHOT: NO AUTOMATIC ADOPTION DECISION",
             ParagraphStyle("Caution", parent=label_style, fontSize=10.5, leading=14),
         ),
