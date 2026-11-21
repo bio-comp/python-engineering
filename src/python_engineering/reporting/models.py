@@ -261,6 +261,20 @@ class Run(Contract):
                 raise ValueError(f"gate {gate.gate_id} refers to unknown evidence")
             if gate.passed is True and not gate.evidence_ids:
                 raise ValueError(f"passed gate {gate.gate_id} needs evidence")
+        receipt_grades = {e.evidence_id: e.grade for e in self.evidence}
+        measured_grades = {
+            receipt_grades[o.evidence_id]
+            for o in self.observations
+            if o.state == ObservationState.MEASURED
+        }
+        # The legacy input flag cannot suppress synthetic provenance, whether
+        # synthetic measured observations are the whole dataset or one arm.
+        # Grades remain source declarations, NOT independently attested evidence.
+        if EvidenceGrade.SYNTHETIC in measured_grades and not self.synthetic_demonstration:
+            raise ValueError(
+                "synthetic measured evidence requires synthetic_demonstration=true, "
+                "including mixed synthetic and nonsynthetic source declarations"
+            )
         if self.synthetic_demonstration and not any(
             e.grade == EvidenceGrade.SYNTHETIC for e in self.evidence
         ):

@@ -10,6 +10,7 @@ from pydantic import Field
 from python_engineering.reporting.models import (
     Contract,
     Criterion,
+    EvidenceGrade,
     Observation,
     ObservationState,
     Run,
@@ -61,6 +62,7 @@ class CriterionResult(Contract):
     evidence_grade: str
     anchors: tuple[str, str, str, str, str]
     evidence_ids: tuple[str, ...]
+    observation_ids: tuple[str, ...]
     explanation: str
 
 
@@ -73,6 +75,7 @@ class Analysis(Contract):
     required_criteria_state: str
     unscored_required_criteria: tuple[str, ...]
     evaluation_readiness: str
+    evidence_classification: str
     statistical_scope: str = (
         "Descriptive counts, proportions, and medians only; no confidence "
         "intervals/p-values without an independently specified sampling design."
@@ -142,18 +145,61 @@ def paired_metrics(observations: tuple[Observation, ...]) -> PairedMetrics:
     )
 
 
-def _grade_for(run: Run, condition: str) -> str:
-    receipts = {e.evidence_id: e for e in run.evidence}
+def measured_evidence_classification(run: Run) -> str:
+    """Classify measured provenance, never implying authenticated external evidence."""
+    grade_by_id = {e.evidence_id: e.grade for e in run.evidence}
     grades = {
-        receipts[o.evidence_id].grade
-        for o in run.observations
-        if o.condition_id == condition and o.state == ObservationState.MEASURED
+        grade_by_id[o.evidence_id] for o in run.observations if o.state == ObservationState.MEASURED
     }
+    if not grades:
+        return "NO MEASURED EVIDENCE"
+    synthetic = EvidenceGrade.SYNTHETIC in grades
+    if synthetic and len(grades) == 1:
+        return "SYNTHETIC-ONLY MEASURED EVIDENCE"
+    if synthetic:
+        return "MIXED SYNTHETIC AND NONSYNTHETIC DECLARATIONS"
+    return "NONSYNTHETIC SOURCE DECLARATIONS - NOT ATTESTED"
+
+
+def _support_for(rule: Criterion, run: Run) -> tuple[Observation, ...]:
+    """Return precisely those observations whose measured values enter the metric."""
+    measured = [o for o in run.observations if o.state == ObservationState.MEASURED]
+    if rule.metric == "unique_true_positives":
+        by_condition = {
+            condition: {
+                (o.case_id, o.repetition, o.seed): o
+                for o in measured
+                if o.condition_id == condition and o.expected_defect is not None
+            }
+            for condition in ("baseline", "candidate")
+        }
+        matched = set(by_condition["baseline"]) & set(by_condition["candidate"])
+        return tuple(
+            o
+            for o in measured
+            if o.expected_defect is not None and (o.case_id, o.repetition, o.seed) in matched
+        )
+    selected = (o for o in measured if o.condition_id == rule.condition_id)
+    if rule.metric == "median_duration_ms":
+        return tuple(o for o in selected if o.duration_ms is not None)
+    detection = (o for o in selected if o.expected_defect is not None)
+    if rule.metric == "precision":
+        return tuple(o for o in detection if o.detected_defect is True)
+    if rule.metric == "recall":
+        return tuple(o for o in detection if o.expected_defect is True)
+    if rule.metric == "specificity":
+        return tuple(o for o in detection if o.expected_defect is False)
+    return tuple(detection)
+
+
+def _support_grade(run: Run, evidence_ids: tuple[str, ...]) -> str:
+    receipts = {e.evidence_id: e for e in run.evidence}
+    grades = {receipts[eid].grade.value for eid in evidence_ids}
     if not grades:
         return "NOT MEASURED"
     if len(grades) != 1:
-        return "mixed (" + ", ".join(sorted(grade.value for grade in grades)) + ")"
-    return next(iter(grades)).value
+        return "mixed (" + ", ".join(sorted(grades)) + ")"
+    return next(iter(grades))
 
 
 def _criterion(
@@ -179,15 +225,14 @@ def _criterion(
         value, denominator = metrics.median_duration_ms, metrics.duration_count
     else:
         value, denominator = float(paired.unique_true_positives), paired.matched_detection_pairs
-    evidence_refs = tuple(
-        sorted(
-            {
-                o.evidence_id
-                for o in run.observations
-                if o.condition_id == rule.condition_id and o.state == ObservationState.MEASURED
-            }
-        )
-    )
+    contributors = _support_for(rule, run)
+    evidence_refs = tuple(sorted({o.evidence_id for o in contributors}))
+    observation_refs = tuple(sorted(o.observation_id for o in contributors))
+    # Denominators are derived by the same metric predicates above; these
+    # observations support both the numerator and the relevant denominator.
+    expected_support = denominator * (2 if metric_name == "unique_true_positives" else 1)
+    if len(contributors) != expected_support:
+        raise ValueError(f"support/denominator mismatch for {rule.criterion_id}")
     if denominator < rule.min_denominator or value is None:
         score, state = None, ObservationState.INSUFFICIENT
         explanation = (
@@ -216,15 +261,17 @@ def _criterion(
         denominator=denominator,
         score=score,
         state=state,
-        evidence_grade=_grade_for(run, rule.condition_id),
+        evidence_grade=_support_grade(run, evidence_refs),
         anchors=rule.anchors,
         evidence_ids=evidence_refs,
+        observation_ids=observation_refs,
         explanation=explanation,
     )
 
 
 def analyze(run: Run) -> Analysis:
     """Calculate from validated observations only; never impute unknown results."""
+    classification = measured_evidence_classification(run)
     baseline = condition_metrics(run.observations, "baseline")
     candidate = condition_metrics(run.observations, "candidate")
     paired = paired_metrics(run.observations)
@@ -252,7 +299,11 @@ def analyze(run: Run) -> Analysis:
         readiness = "INCOMPLETE - ESSENTIAL GATES UNKNOWN"
     elif criterion_state != "COMPLETE - ALL REQUIRED CRITERIA SCORED":
         readiness = "INCOMPLETE - REQUIRED MEASUREMENTS"
-    elif run.synthetic_demonstration:
+    elif classification == "MIXED SYNTHETIC AND NONSYNTHETIC DECLARATIONS":
+        readiness = "INCOMPLETE - SYNTHETIC MEASURED EVIDENCE"
+    elif classification == "SYNTHETIC-ONLY MEASURED EVIDENCE" or run.synthetic_demonstration:
+        # A model_copy(update=...) can bypass Pydantic validators: analysis must
+        # remain conservative independently of the public ingestion boundary.
         readiness = "INCOMPLETE - SYNTHETIC DEMONSTRATION"
     else:
         readiness = "RECORDED REQUIREMENTS MET - NO ADOPTION INFERRED"
@@ -265,4 +316,5 @@ def analyze(run: Run) -> Analysis:
         required_criteria_state=criterion_state,
         unscored_required_criteria=missing_required,
         evaluation_readiness=readiness,
+        evidence_classification=classification,
     )

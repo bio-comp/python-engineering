@@ -95,6 +95,7 @@ def build_report(
             "generator_version": REPORT_GENERATOR_VERSION,
             "status": run.experiment.status.value,
             "synthetic_demonstration": run.synthetic_demonstration,
+            "evidence_classification": result.evidence_classification,
             "font_name": font_file.name,
             "font_sha256": font_sha256,
             "receipt_verification_root_supplied": evidence_root is not None,

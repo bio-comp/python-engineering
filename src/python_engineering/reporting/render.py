@@ -131,18 +131,31 @@ def report_tables(
     )
     score = TableSpec(
         "Criterion-level rubric outcomes (no inferred adoption)",
-        ("ID / dimension", "Metric / scope", "Value / n", "0-4 score / evidence"),
+        ("ID / dimension", "Metric / scope", "Value / n", "0-4 score / declared grade"),
         tuple(
             (
                 f"{c.criterion_id}: {c.dimension}",
                 f"{c.metric} / {c.condition_id}",
                 f"{fmt(c.value)} / {c.denominator}",
-                f"{fmt(c.score)} / {c.evidence_grade}; {c.state.value}",
+                (
+                    f"{fmt(c.score)} / {c.evidence_grade}; {c.state.value}; "
+                    f"receipts: {', '.join(c.evidence_ids) or 'NONE'}"
+                ),
             )
             for c in analysis.criteria
         )
         or (("No prespecified criteria", "NOT MEASURED", "-", "NOT MEASURED"),),
         (0.26, 0.22, 0.18, 0.34),
+    )
+    criterion_support = TableSpec(
+        "Exact observations contributing to each rubric criterion",
+        ("Criterion", "Measured observation IDs (numerator / denominator support)"),
+        tuple(
+            (c.criterion_id, ", ".join(c.observation_ids) or "NO APPLICABLE OBSERVATIONS")
+            for c in analysis.criteria
+        )
+        or (("NONE", "NO APPLICABLE OBSERVATIONS"),),
+        (0.20, 0.80),
     )
     gates = TableSpec(
         "Noncompensatory acceptance gates",
@@ -185,7 +198,7 @@ def report_tables(
     )
     receipt_status = {check.evidence_id: check.status.value for check in receipt_checks}
     evidence = TableSpec(
-        "Evidence receipts and independent/source strength",
+        "Evidence receipts and declared grade / local integrity",
         ("Receipt", "Declared grade / local integrity", "Identity / locator / note"),
         tuple(
             (
@@ -204,7 +217,9 @@ def report_tables(
         receipt_grades[o.evidence_id] for o in run.observations if o.state.value == "MEASURED"
     }
     independent_grades = "independently_reproduced" in linked_grades
-    if run.synthetic_demonstration or not measured:
+    if not measured:
+        independent_status = "NOT MEASURED"
+    elif run.synthetic_demonstration and not independent_grades:
         independent_status = "NOT MEASURED"
     elif independent_grades and len(linked_grades) == 1:
         independent_status = "SOURCE DECLARED - NOT ATTESTED"
@@ -234,10 +249,16 @@ def report_tables(
             ),
             (
                 "Raw measurements",
-                "SYNTHETIC"
-                if run.synthetic_demonstration
-                else ("PRESENT" if measured else "NOT MEASURED"),
-                "Measured rows: " + str(measured),
+                (
+                    "SYNTHETIC"
+                    if analysis.evidence_classification.startswith("SYNTHETIC")
+                    else "MIXED"
+                    if analysis.evidence_classification.startswith("MIXED")
+                    else "PRESENT"
+                    if measured
+                    else "NOT MEASURED"
+                ),
+                f"Measured rows: {measured}; {analysis.evidence_classification}",
             ),
             (
                 "Paired baseline/candidate",
@@ -269,6 +290,11 @@ def report_tables(
                 "Overall evidence readiness",
                 analysis.evaluation_readiness,
                 "Recorded gates and required measurements are separate; no adoption inferred",
+            ),
+            (
+                "Measured evidence classification",
+                analysis.evidence_classification,
+                "Derived from linked measured receipt grades; source declarations, not attestation",
             ),
             (
                 "Independent reproduction",
@@ -312,6 +338,7 @@ def report_tables(
         paired,
         gates,
         score,
+        criterion_support,
         rubric,
         observations,
         evidence,
@@ -340,9 +367,12 @@ def render_markdown(
 ) -> str:
     e = run.experiment
     banner = (
-        "**SYNTHETIC DEMONSTRATION - NOT EMPIRICAL TOOL EVIDENCE**"
+        "**MIXED SYNTHETIC AND NONSYNTHETIC SOURCE DECLARATIONS - NOT EMPIRICAL QUALIFICATION**"
+        if analysis.evidence_classification.startswith("MIXED")
+        else "**SYNTHETIC DEMONSTRATION - NOT EMPIRICAL TOOL EVIDENCE**"
         if run.synthetic_demonstration
-        else ("**EVIDENCE SNAPSHOT - DO NOT INFER QUALIFICATION OR ADOPTION**")
+        or analysis.evidence_classification == "SYNTHETIC-ONLY MEASURED EVIDENCE"
+        else "**EVIDENCE SNAPSHOT - DO NOT INFER QUALIFICATION OR ADOPTION**"
     )
     lines = [
         f"# {e.title}",
@@ -370,6 +400,8 @@ def render_markdown(
         "",
         f"**Evaluation evidence readiness:** {analysis.evaluation_readiness}",
         "",
+        f"**Measured evidence classification:** {analysis.evidence_classification}",
+        "",
         f"**Disposition (recorded, not generated):** {run.interpretation.disposition}",
         "",
         f"**Applicability:** {run.interpretation.applicability}",
@@ -379,7 +411,13 @@ def render_markdown(
         "## Key measured results",
         "",
         _markdown_table(_metrics_table(analysis)),
-        _markdown_table(report_tables(run, analysis, receipt_checks)[3]),
+        _markdown_table(
+            next(
+                t
+                for t in report_tables(run, analysis, receipt_checks)
+                if t.title.startswith("Paired evidence")
+            )
+        ),
         "## Limitations",
         "",
         *[f"- {x}" for x in run.interpretation.limitations],
@@ -428,7 +466,12 @@ def pdf_font_identity(font_path: Path | None = None) -> tuple[Path, str]:
 
 
 def _check_pdf_repertoire(
-    run: Run, analysis: Analysis, *, cmap: set[int], receipt_checks: tuple[ReceiptCheck, ...]
+    run: Run,
+    analysis: Analysis,
+    *,
+    cmap: set[int],
+    bold_cmap: set[int],
+    receipt_checks: tuple[ReceiptCheck, ...],
 ) -> None:
     """Fail explicitly on missing glyphs rather than rendering replacement squares."""
     e = run.experiment
@@ -450,15 +493,30 @@ def _check_pdf_repertoire(
         analysis.essential_gate_state,
         analysis.required_criteria_state,
         analysis.evaluation_readiness,
+        analysis.evidence_classification,
+        run.rubric_revision,  # Dynamic metadata is printed on EVERY page footer.
+        REPORT_GENERATOR_VERSION,  # Versioned footer field, never silently substituted.
     ]
     for table in report_tables(run, analysis, receipt_checks):
         displayed.extend((table.title, *table.headers))
         displayed.extend(value for row in table.rows for value in row)
+    # Title and table labels/headers render in the bold face; text that works
+    # in Vera.ttf may still be absent from the separate VeraBd.ttf cmap.
+    tables = report_tables(run, analysis, receipt_checks)
+    displayed_bold = [e.title]
+    for table in tables:
+        displayed_bold.extend((table.title, *table.headers))
     unsupported = {
         char
         for text in displayed
         for char in text
         if char not in "\n\t\r" and ord(char) not in cmap
+    }
+    unsupported |= {
+        char
+        for text in displayed_bold
+        for char in text
+        if char not in "\n\t\r" and ord(char) not in bold_cmap
     }
     if unsupported:
         names = ", ".join(f"U+{ord(c):04X} ({c})" for c in sorted(unsupported))
@@ -485,17 +543,24 @@ def render_pdf(
     name = "PE-" + font_sha256[:14]
     normal = TTFont(name, str(selected_font))
     cmap = set(normal.face.charToGlyph)
-    _check_pdf_repertoire(run, analysis, cmap=cmap, receipt_checks=receipt_checks)
-    pdfmetrics.registerFont(normal)
     if font_path is None:
         import reportlab
 
         bold_path = Path(reportlab.__file__).parent / "fonts" / "VeraBd.ttf"
         bold = name + "-Bold"
-        pdfmetrics.registerFont(TTFont(bold, str(bold_path)))
+        bold_font = TTFont(bold, str(bold_path))
+        bold_cmap = set(bold_font.face.charToGlyph)
     else:
         # Deliberate single-face rendering when the caller supplies only one font.
         bold = name
+        bold_font = None
+        bold_cmap = cmap
+    _check_pdf_repertoire(
+        run, analysis, cmap=cmap, bold_cmap=bold_cmap, receipt_checks=receipt_checks
+    )
+    pdfmetrics.registerFont(normal)
+    if bold_font is not None:
+        pdfmetrics.registerFont(bold_font)
     pdfmetrics.registerFontFamily(name, normal=name, bold=bold, italic=name, boldItalic=bold)
 
     from reportlab.lib import colors
@@ -682,13 +747,17 @@ def render_pdf(
         paragraph("Essential gates", analysis.essential_gate_state),
         paragraph("Required criteria", analysis.required_criteria_state),
         paragraph("Evidence readiness", analysis.evaluation_readiness),
+        paragraph("Measured evidence classification", analysis.evidence_classification),
         paragraph("Recorded disposition", run.interpretation.disposition),
         paragraph("Applicability", run.interpretation.applicability),
         paragraph("Evidence limitation", "; ".join(run.interpretation.limitations)),
         Spacer(1, 15),
         Paragraph(
-            "SYNTHETIC DATA: NOT A REAL TOOL RESULT"
+            "MIXED SYNTHETIC / NONSYNTHETIC SOURCE DECLARATIONS - NOT QUALIFIED"
+            if analysis.evidence_classification.startswith("MIXED")
+            else "SYNTHETIC DATA: NOT A REAL TOOL RESULT"
             if run.synthetic_demonstration
+            or analysis.evidence_classification == "SYNTHETIC-ONLY MEASURED EVIDENCE"
             else "SOURCE-BOUNDED SNAPSHOT: NO AUTOMATIC ADOPTION DECISION",
             ParagraphStyle("Caution", parent=label_style, fontSize=10.5, leading=14),
         ),
