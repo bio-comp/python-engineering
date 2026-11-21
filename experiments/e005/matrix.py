@@ -550,26 +550,39 @@ def _venv() -> tuple[Path, str, Path]:
     return prefix.parent, prefix.name, site_packages
 
 
-def _git_revision() -> tuple[str, bool]:
-    repo = Path(__file__).resolve().parents[2]
-    revision = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=10,
-    ).stdout.strip()
-    dirty = bool(
-        subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=all"],
+def _git_revision(source_root: Path | None = None) -> tuple[str, bool]:
+    """Measure the actual source worktree, never an inherited Git override.
+
+    Git environment variables can redirect repository, worktree, index, refs,
+    objects, and effective configuration even when cwd is correct. Let Git
+    discover the intended checkout's .git directory/file itself. In particular,
+    this preserves real linked worktrees without trusting GIT_DIR from hooks.
+    """
+    repo = (
+        source_root if source_root is not None else Path(__file__).resolve().parents[2]
+    ).resolve()
+    git_environment = {
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+    }
+
+    def git(*arguments: str) -> str:
+        return subprocess.run(
+            ["git", *arguments],
             cwd=repo,
+            env=git_environment,
             capture_output=True,
             text=True,
             check=True,
             timeout=10,
         ).stdout.strip()
-    )
+
+    discovered = Path(git("rev-parse", "--show-toplevel")).resolve()
+    if discovered != repo:
+        raise RuntimeError(f"E-005 source Git root mismatch: expected {repo}, found {discovered}")
+    revision = git("rev-parse", "--verify", "HEAD")
+    if not re.fullmatch(r"[0-9a-f]{40,64}", revision):
+        raise RuntimeError("E-005 source Git revision is not a complete object ID")
+    dirty = bool(git("status", "--porcelain", "--untracked-files=all"))
     return revision, dirty
 
 

@@ -600,3 +600,221 @@ def test_r2_checker_executable_is_from_active_venv() -> None:
         executable = Path(matrix._exe(name))
         assert executable.is_relative_to(Path(sys.prefix))
         assert executable.is_file()
+
+
+def _r3_fixture_repo(path: Path) -> tuple[Path, str]:
+    """Create a committed unrelated repository without inherited Git overrides."""
+    import os
+    import subprocess
+
+    path.mkdir()
+    clean_environment = {
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+    }
+
+    def git(*args: str) -> str:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=path,
+            env=clean_environment,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+        return result.stdout.strip()
+
+    git("init", "-q")
+    (path / "tracked.txt").write_text("original contents\n")
+    git("add", "tracked.txt")
+    git(
+        "-c",
+        "user.name=E005 Test",
+        "-c",
+        "user.email=e005@example.invalid",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "-qm",
+        "fixture",
+    )
+    return path, git("rev-parse", "HEAD")
+
+
+def test_r3_git_revision_cannot_be_redirected_by_foreign_git_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import experiments.e005.matrix as matrix
+
+    foreign, other_sha = _r3_fixture_repo(tmp_path / "foreign")
+    expected_sha, expected_dirty = matrix._git_revision()
+    assert other_sha != expected_sha  # The negative control must discriminate.
+    monkeypatch.setenv("GIT_DIR", str(foreign / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(foreign))
+    assert matrix._git_revision() == (expected_sha, expected_dirty)
+
+
+def test_r3_git_revision_clean_dirty_and_untracked(
+    tmp_path: Path,
+) -> None:
+    import experiments.e005.matrix as matrix
+
+    repo, expected_sha = _r3_fixture_repo(tmp_path / "target")
+    assert matrix._git_revision(repo) == (expected_sha, False)
+
+    (repo / "tracked.txt").write_text("modified tracked content\n")
+    assert matrix._git_revision(repo) == (expected_sha, True)
+
+    (repo / "tracked.txt").write_text("original contents\n")
+    assert matrix._git_revision(repo) == (expected_sha, False)
+
+    (repo / "untracked.txt").write_text("untracked file\n")
+    assert matrix._git_revision(repo) == (expected_sha, True)
+
+
+def test_r3_git_provenance_preserves_real_linked_worktrees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+    import subprocess
+
+    import experiments.e005.matrix as matrix
+
+    repo, expected_sha = _r3_fixture_repo(tmp_path / "main")
+    linked = tmp_path / "linked"
+    subprocess.run(
+        ["git", "worktree", "add", "--detach", "-q", str(linked)],
+        cwd=repo,
+        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        check=True,
+        timeout=15,
+    )
+    assert (linked / ".git").is_file()
+    poison, _ = _r3_fixture_repo(tmp_path / "poison")
+    monkeypatch.setenv("GIT_DIR", str(poison / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(poison))
+    assert matrix._git_revision(linked) == (expected_sha, False)
+
+    (linked / "tracked.txt").write_text("linked-worktree modification\n")
+    assert matrix._git_revision(linked) == (expected_sha, True)
+
+
+def test_r3_git_provenance_rejects_nested_non_root_path(
+    tmp_path: Path,
+) -> None:
+    import experiments.e005.matrix as matrix
+
+    repo, _ = _r3_fixture_repo(tmp_path / "top")
+    nested = repo / "nested"
+    nested.mkdir()
+    with pytest.raises(RuntimeError, match="source Git root mismatch"):
+        matrix._git_revision(nested)
+
+
+def test_r3_git_environment_cannot_override_index_or_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+    import subprocess
+
+    import experiments.e005.matrix as matrix
+
+    repo, expected_sha = _r3_fixture_repo(tmp_path / "target")
+    baseline = (expected_sha, False)
+    foreign, _ = _r3_fixture_repo(tmp_path / "foreign")
+    poison = {
+        "GIT_INDEX_FILE": str(tmp_path / "foreign-empty-index"),
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "core.worktree",
+        "GIT_CONFIG_VALUE_0": str(foreign),
+        "GIT_CONFIG_GLOBAL": str(tmp_path / "custom-global"),
+        "GIT_CONFIG_SYSTEM": str(tmp_path / "custom-system"),
+        "GIT_CONFIG_PARAMETERS": "'core.bare=true'",
+        "GIT_COMMON_DIR": str(foreign / ".git"),
+        "GIT_OBJECT_DIRECTORY": str(foreign / ".git" / "objects"),
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(foreign / ".git" / "objects"),
+        "GIT_CEILING_DIRECTORIES": str(repo),
+        "GIT_NAMESPACE": "redirected",
+        "GIT_TRACE": "1",
+    }
+    for key, value in poison.items():
+        monkeypatch.setenv(key, value)
+
+    original_run = subprocess.run
+    observed_git_calls: list[tuple[str, ...]] = []
+
+    def intercepted(
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str] | None = None,
+        text: bool = True,
+        capture_output: bool = True,
+        check: bool = True,
+        timeout: int = 10,
+    ) -> subprocess.CompletedProcess[str]:
+        assert env is not None
+        assert not any(key.startswith("GIT_") for key in env)
+        observed_git_calls.append(tuple(args))
+        return original_run(
+            args,
+            cwd=cwd,
+            env=env,
+            text=text,
+            capture_output=capture_output,
+            check=check,
+            timeout=timeout,
+        )
+
+    with monkeypatch.context() as patched:
+        patched.setattr(subprocess, "run", intercepted)
+        assert matrix._git_revision(repo) == baseline
+
+    assert len(observed_git_calls) >= 2
+    assert all(key in os.environ for key in poison)
+
+
+def test_r3_matrix_source_provenance_ignores_inherited_git_redirect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+    import subprocess
+
+    source_root = Path(__file__).resolve().parents[2]
+    clean_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    expected_sha = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        cwd=source_root,
+        env=clean_env,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.strip()
+    expected_dirty = bool(
+        subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=source_root,
+            env=clean_env,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+    )
+
+    foreign, foreign_sha = _r3_fixture_repo(tmp_path / "foreign")
+    assert foreign_sha != expected_sha
+    monkeypatch.setenv("GIT_DIR", str(foreign / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(foreign))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "wrong-index"))
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.bare")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
+
+    report = execute_matrix(tmp_path / "matrix")
+    assert report.git_revision == expected_sha
+    assert report.git_dirty == expected_dirty
+    assert report.fixture_sha256 == (
+        "35f2bdbfaa12e30d3af0c93fcb3dd84456cf5ad60d7d1c07e52fe38dfc95de08"
+    )
+    assert len(report.runtimes) == 16
+    assert len(report.checkers) == 6

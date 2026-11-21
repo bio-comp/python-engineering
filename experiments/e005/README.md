@@ -53,6 +53,30 @@ mypy strict with and without Pydantic plugin are separate arms. The temporary
 No experimental stdout/stderr or host paths are checked into Git; review raw
 receipts before sharing to ensure no accidental disclosures.
 
+### Git source-revision provenance (R3)
+
+`_git_revision()` resolves the source root from this harness file, then
+invokes Git with an explicit environment that removes **all inherited
+`GIT_*` variables** for repository discovery, commit identification and
+dirty/untracked-file detection. That excludes repository/worktree/index/object
+redirection (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+`GIT_COMMON_DIR`), Git command/config overrides (`GIT_CONFIG_*`),
+namespaces and tracing. Unrelated platform process variables are retained
+for normal Git executable and repository operation. Git discovers the
+checkout's genuine `.git` directory **or linked-worktree `.git` file**
+from the requested source path; a discovered top-level path that differs
+from that expected source root **fails closed**. All three Git reads use
+the same filtered environment, and a complete commit object ID is required.
+
+The report's `git_revision` and `git_dirty` therefore describe the
+intended Python Engineering checkout, not an unrelated Git repo supplied
+by inherited automation environment. Isolated adversarial tests cover
+foreign-repository redirection, alternate Git index/config/object
+variables, real linked worktrees, clean/modified/untracked files,
+root mismatch, and complete matrix execution under inherited Git
+overrides. These source receipts are local replay evidence, **not external
+attestation or a guarantee against arbitrary host/Git-install tampering**.
+
 ### Static-checker environment contract (R2)
 
 All six checker arms, including mypy with the Pydantic plugin, and the
