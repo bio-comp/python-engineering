@@ -38,8 +38,17 @@ def capture_unrun_manifest(
         "python-engineering-lab": importlib.metadata.version("python-engineering-lab"),
         "pydantic": importlib.metadata.version("pydantic"),
     }
-    if task.package not in {"python-stdlib", *packages}:
-        packages[task.package] = importlib.metadata.version(task.package)
+    # The standard library is versioned with CPython; distributions are resolved
+    # by their exact declared distribution identity, never a similar import name.
+    installed_version = (
+        current_python
+        if task.package == "python-stdlib"
+        else importlib.metadata.version(task.package)
+    )
+    if installed_version != task.exact_version:
+        raise ValueError("installed package version differs from frozen task requirement")
+    if task.package != "python-stdlib":
+        packages[task.package] = installed_version
     return RunManifest(
         task_id=task.task_id,
         condition=condition,

@@ -7,7 +7,14 @@ execution runner is not yet implemented and cannot be inferred from traces.
 from pathlib import Path
 
 from python_engineering.digests import sha256_file
-from python_engineering.e010.contracts import ObservationTrace, OfflineScore, OracleSpec, TaskSpec
+from python_engineering.e010.contracts import (
+    ObservationTrace,
+    OfflineScore,
+    OracleSpec,
+    PydanticAfterInputs,
+    StdlibStripInputs,
+    TaskSpec,
+)
 
 
 class IntegrityError(ValueError):
@@ -39,7 +46,22 @@ def score_observations(
     trace = ObservationTrace.model_validate_json(trace_file.read_bytes())
     if oracle.oracle_id != task.oracle_id or trace.task_id != task.task_id:
         raise IntegrityError("task/oracle/trace identity mismatch")
+
+    # Only the two published E-010 fixture shapes are supported. A correct hash
+    # authenticates frozen bytes against the task, not oracle case completeness.
+    fixture: PydanticAfterInputs | StdlibStripInputs
+    if task.oracle_id == "pydantic-after-v1":
+        fixture = PydanticAfterInputs.model_validate_json(fixture_file.read_bytes())
+    elif task.oracle_id == "stdlib-strip-v1":
+        fixture = StdlibStripInputs.model_validate_json(fixture_file.read_bytes())
+    else:
+        raise IntegrityError("unsupported E-010 fixture family")
+    fixture_ids = [case.case_id for case in fixture.cases]
+    if len(set(fixture_ids)) != len(fixture_ids):
+        raise IntegrityError("duplicate frozen fixture case ID")
     expected = {case.case_id: case.expected for case in oracle.cases}
+    if set(fixture_ids) != set(expected):
+        raise IntegrityError("frozen fixture and oracle case coverage mismatch")
     observed = {case.case_id: case.actual for case in trace.observations}
     ids = expected.keys() | observed.keys()
     failed = tuple(sorted(k for k in ids if expected.get(k) != observed.get(k)))

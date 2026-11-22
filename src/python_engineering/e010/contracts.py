@@ -114,6 +114,27 @@ class RunManifest(StrictRecord):
         return tuple(failures)
 
 
+class PydanticAfterInputCase(StrictRecord):
+    case_id: str = Field(min_length=1)
+    left: int
+    right: int
+
+
+class StdlibStripInputCase(StrictRecord):
+    case_id: str = Field(min_length=1)
+    input: str
+
+
+class PydanticAfterInputs(StrictRecord):
+    contract: str = Field(min_length=1)
+    cases: tuple[PydanticAfterInputCase, ...] = Field(min_length=1)
+
+
+class StdlibStripInputs(StrictRecord):
+    contract: str = Field(min_length=1)
+    cases: tuple[StdlibStripInputCase, ...] = Field(min_length=1)
+
+
 class OracleCase(StrictRecord):
     case_id: str = Field(min_length=1)
     expected: str
@@ -152,6 +173,12 @@ class OfflineScore(StrictRecord):
     assessed_cases: int = Field(ge=0)
     failed_case_ids: tuple[str, ...]
     scope: Literal["offline_observation_consistency_only"] = "offline_observation_consistency_only"
+
+    @model_validator(mode="after")
+    def consistent_pass_status(self) -> Self:
+        if self.passed == bool(self.failed_case_ids):
+            raise ValueError("offline pass status contradicts failed case IDs")
+        return self
 
 
 class TrialRecord(StrictRecord):

@@ -1,6 +1,7 @@
 """E-010 calibration, integrity and non-efficacy proof obligations."""
 
 import hashlib
+import importlib.metadata
 import json
 import re
 import sys
@@ -360,7 +361,9 @@ def test_provenance_rejects_wrong_interpreter_and_records_deps() -> None:
             project_root=ROOT,
             seed=101,
         )
-    extra = task().model_copy(update={"package": "hypothesis"})
+    extra = task().model_copy(
+        update={"package": "hypothesis", "exact_version": importlib.metadata.version("hypothesis")}
+    )
     m = capture_unrun_manifest(
         task=extra,
         condition=RetrievalCondition.BASELINE,
