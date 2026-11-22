@@ -1,5 +1,6 @@
 """Reproducible labeled Ruff/mypy delta without changing production config."""
 
+import hashlib
 import json
 import re
 import shutil
@@ -61,12 +62,94 @@ def _mypy(config: Path, source: Path) -> tuple[int, set[str]]:
     return result.returncode, set(re.findall(r"\[([a-z][\w-]+)\]", result.stdout))
 
 
-def test_configs_are_real_pyproject_fragments_and_keep_baseline() -> None:
-    for path in (BASE, CANDIDATE):
-        data = tomllib.loads(path.read_text())
-        assert data["tool"]["mypy"]["strict"] is True
-        assert data["tool"]["mypy"]["python_version"] == "3.14"
-        assert set(("E", "F", "I", "B", "UP", "RUF")) <= set(data["tool"]["ruff"]["lint"]["select"])
+def test_baseline_configuration_contract() -> None:
+    """Protect the complete experimental baseline, not merely a subset."""
+    assert tomllib.loads(BASE.read_text(encoding="utf-8")) == {
+        "tool": {
+            "ruff": {
+                "target-version": "py314",
+                "line-length": 100,
+                "lint": {"select": ["E", "F", "I", "B", "UP", "RUF"]},
+            },
+            "mypy": {"python_version": "3.14", "strict": True},
+        }
+    }
+
+
+def test_candidate_configuration_contract() -> None:
+    """Protect every declared candidate selector, switch, and error code."""
+    assert tomllib.loads(CANDIDATE.read_text(encoding="utf-8")) == {
+        "tool": {
+            "ruff": {
+                "target-version": "py314",
+                "line-length": 100,
+                "lint": {
+                    "select": [
+                        "E",
+                        "F",
+                        "I",
+                        "B",
+                        "UP",
+                        "RUF",
+                        "S",
+                        "T20",
+                        "DTZ",
+                        "C4",
+                        "SIM",
+                        "PIE",
+                        "ASYNC",
+                        "PT",
+                        "TRY",
+                        "LOG",
+                    ]
+                },
+            },
+            "mypy": {
+                "python_version": "3.14",
+                "strict": True,
+                "warn_unreachable": True,
+                "disallow_any_explicit": True,
+                "enable_error_code": [
+                    "possibly-undefined",
+                    "explicit-override",
+                    "exhaustive-match",
+                    "redundant-expr",
+                    "ignore-without-code",
+                    "unused-awaitable",
+                ],
+            },
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "expected_sha256"),
+    [
+        (
+            "fixtures/known_bad.py.txt",
+            "7b80ae919768d2f069ea7e9341c21294f53df84eb7e07a8d652e771813ef9d2d",
+        ),
+        (
+            "fixtures/known_good.py.txt",
+            "7a0beb65b16416964c06bde5be97a587fc96383742bbcfd13ab85cf1d6a2700a",
+        ),
+        (
+            "base.pyproject.toml",
+            "bc679fa9722f77df12864d267adad015872319ac97910542fdd85bdb7ae37148",
+        ),
+        (
+            "candidate.pyproject.toml",
+            "18a0f97ded9bdf5d2bf29f61f3dcfb206a92e15e0a945a092c053981e0cefd16",
+        ),
+    ],
+)
+def test_frozen_experiment_bytes(relative_path: str, expected_sha256: str) -> None:
+    """Identify fixture/configuration bytes independently of diagnostic outputs."""
+    actual_sha256 = hashlib.sha256((FIXTURE / relative_path).read_bytes()).hexdigest()
+    assert actual_sha256 == expected_sha256, relative_path
+
+
+def test_checker_versions_are_pinned() -> None:
     assert version("ruff") == "0.17.5"
     assert version("mypy") == "1.20.2"
 
