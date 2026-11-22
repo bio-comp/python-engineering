@@ -14,6 +14,34 @@ Requires uv; laboratory targets CPython 3.14.10. Run uv python install 3.14.10 a
 
 Synthetic task fixtures are authored independently and labeled calibration or published-test material. Public fixtures cannot be described as blind to models that can retrieve this repository.
 
+
+## Evidence report generation (experimental)
+
+The versioned `reporting` module validates frozen run data and produces machine-readable analysis,
+concise/detailed Markdown, and a paginated selectable PDF with reproducibility hashes.
+See [REPORTING.md](REPORTING.md) for schema, rubric semantics, evidence gates, layout,
+reproduction commands, qualification limits and proposed canonical reconciliation.
+
+The checked-in E-900/E-901 fixtures are **synthetic reporting demonstrations only**, not
+real measurements, not a registered experimental protocol, and not evidence of any tool
+superiority or adoption.
+
+```bash
+uv sync --locked
+uv run --locked python -m python_engineering.reporting validate-run examples/synthetic_900.json
+uv run --locked python -m python_engineering.reporting build-report examples/synthetic_900.json /tmp/pyeng-demo-report-new
+```
+
+ReportLab is a tested implementation dependency for this report renderer. Other proposed
+PDF approaches and optional marimo exploration are not yet empirically qualified.
+
+Reporting R1 corrections (generator 0.2.0) add long-cell PDF continuation,
+atomic no-overwrite publication, matched-case comparisons, required-measurement
+completeness, explicit root-confined receipt checks, Unicode font-repertoire
+checks, and observation-linked independent-grade attribution. Historical E-900/E-901
+synthetic artifacts remain frozen at generator 0.1.0; publish new reports
+under new paths. See REPORTING.md for the exact corrected contracts.
+
 ## E-010 offline demonstration (no model or MCP trial)
 
 From the repository root, run:
