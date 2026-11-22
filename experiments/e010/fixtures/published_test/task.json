@@ -1,0 +1,14 @@
+{
+  "acceptance_contract": "Normalize only leading/trailing Python whitespace",
+  "exact_version": "3.14.10",
+  "fixture_sha256": "ee22e877ed76e6215f289e68aca4b0671aa260d18a720f60150c6e0f8b6cc19f",
+  "oracle_id": "stdlib-strip-v1",
+  "oracle_sha256": "47f4c3b70bdc55640ab5581c102e19abc2cae0763ef47ac785e7a5f2ff2e9143",
+  "package": "python-stdlib",
+  "permitted_files": [
+    "solution.py"
+  ],
+  "python_version": "3.14.10",
+  "task_id": "e010-stdlib-strip",
+  "tier": "published_test"
+}

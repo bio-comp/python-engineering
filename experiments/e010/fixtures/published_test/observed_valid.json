@@ -1,0 +1,1 @@
+{"task_id":"e010-stdlib-strip","observations":[{"case_id":"padded","actual":"north"},{"case_id":"already_trimmed","actual":"cedar"},{"case_id":"empty","actual":""},{"case_id":"unicode","actual":"rivet"}]}
