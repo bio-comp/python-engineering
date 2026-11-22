@@ -1,0 +1,19 @@
+{
+  "artifact_schema": "1.0",
+  "experiment_id": "E-901",
+  "files_sha256": {
+    "analysis.json": "1cb19567ed5a89608bccabff5ce08de9e10910c7590091c102e09bf1a963b3f6",
+    "report.md": "71c4245e045b526daa35fb09411ef3deb6410835b09b737b5e2a68fa30cfa4d2",
+    "report.pdf": "bd1fbdd0176feb1af29df4830bf31387d53b044229abd30fa8291710b86ae572",
+    "run.json": "b9f3145f92458f272c18f3947d1f57039252b2b26afca537eec4991307c14dec",
+    "summary.md": "5eaac66df760e0f7ab93baea7223627e608cc4d2de0eca13ddc099b1d40ef9e6"
+  },
+  "generator_version": "0.1.0",
+  "input_sha256": "b9f3145f92458f272c18f3947d1f57039252b2b26afca537eec4991307c14dec",
+  "rubric_revision": "synthetic-demo-rubric-v1",
+  "run_id": "synthetic-blocked-v1",
+  "schema_revision": "1.0",
+  "source_commit_sha": "a4d85dc42229f2425216a591303847de47facc0d",
+  "status": "BLOCKED",
+  "synthetic_demonstration": true
+}

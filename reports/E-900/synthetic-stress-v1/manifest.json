@@ -1,0 +1,19 @@
+{
+  "artifact_schema": "1.0",
+  "experiment_id": "E-900",
+  "files_sha256": {
+    "analysis.json": "397746c512a78a58e397abcfbe9a758bcc5c7b28deb3649db19a3676fa3609d3",
+    "report.md": "207759dcf3f677c877727b8a4a7537616f6ab4141561605701eaf7a874193f34",
+    "report.pdf": "4c8e818cf962f5a7dd7e7cc7dbd7a34b6ede0fcfaf2461045141aae73c97de37",
+    "run.json": "de103e160a896fe743c684ab8b4f6e350f048bae302164e883aac7d4e7fa23db",
+    "summary.md": "ff7c11e557a9900672f004015eb1eb841ddd1152eebe32db0d4c556d5abc1205"
+  },
+  "generator_version": "0.1.0",
+  "input_sha256": "de103e160a896fe743c684ab8b4f6e350f048bae302164e883aac7d4e7fa23db",
+  "rubric_revision": "synthetic-demo-rubric-v1",
+  "run_id": "synthetic-stress-v1",
+  "schema_revision": "1.0",
+  "source_commit_sha": "a4d85dc42229f2425216a591303847de47facc0d",
+  "status": "PILOT",
+  "synthetic_demonstration": true
+}
