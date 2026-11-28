@@ -12,10 +12,20 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
+from experiments.e017.evidence import (
+    BoundExtraction,
+    Executable,
+    PolicyReceipt,
+    RunIdentity,
+    RunStage,
+    SourceIdentity,
+    expected_environment,
+    now,
+)
 from experiments.e017.oracle import (
     Fixture,
-    Receipt,
     Stage,
     State,
     Verdict,
@@ -98,7 +108,7 @@ def distribution(prefix: Path) -> str:
     return digest("\n".join(parts).encode())
 
 
-def source_identity() -> dict[str, object]:
+def source_identity() -> SourceIdentity:
     repo = HERE.parents[1]
     git_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
@@ -116,54 +126,101 @@ def source_identity() -> dict[str, object]:
     if Path(git("rev-parse", "--show-toplevel")).resolve() != repo:
         raise ValueError("source worktree identity mismatch")
     files = git("ls-files", "experiments/e017").splitlines()
+    return SourceIdentity(
+        source_commit=git("rev-parse", "--verify", "HEAD"),
+        source_dirty=bool(git("status", "--porcelain", "--untracked-files=all")),
+        source_files={name: digest((repo / name).read_bytes()) for name in files},
+        pyproject_sha256=digest((repo / "pyproject.toml").read_bytes()),
+        lockfile_sha256=digest((repo / "uv.lock").read_bytes()),
+    )
+
+
+def corpus() -> tuple[Fixture, ...]:
+    cases = load_fixtures(HERE / "corpus.json") + load_fixtures(HERE / "precommit_frozen.json")
+    if len({case.case_id for case in cases}) != len(cases):
+        raise ValueError("duplicate corpus case identity")
+    return cases
+
+
+def fixture_identity() -> dict[str, str]:
     return {
-        "source_commit": git("rev-parse", "--verify", "HEAD"),
-        "source_dirty": bool(git("status", "--porcelain", "--untracked-files=all")),
-        "source_files": {name: digest((repo / name).read_bytes()) for name in files},
-        "pyproject_sha256": digest((repo / "pyproject.toml").read_bytes()),
-        "lockfile_sha256": digest((repo / "uv.lock").read_bytes()),
+        "corpus.json": digest((HERE / "corpus.json").read_bytes()),
+        "precommit_frozen.json": digest((HERE / "precommit_frozen.json").read_bytes()),
+        "policies.json": digest((HERE / "policies.json").read_bytes()),
+        **{
+            "update_fixtures/" + name: sha
+            for name, sha in snapshot(HERE / "update_fixtures").items()
+        },
     }
+
+
+def capture_identity(
+    root: Path, prefix: Path, node: Path, uv: Path, stage: RunStage
+) -> RunIdentity:
+    probe = root / "identity-probe"
+    probe.mkdir()
+    env = environment(probe, node, uv)
+    dist = prefix / "node_modules/renovate/dist"
+    python = Path(sys.executable).resolve(strict=True)
+
+    def exe(path: Path, reported: str) -> Executable:
+        return Executable(path=str(path), sha256=digest(path.read_bytes()), version=reported)
+
+    return RunIdentity(
+        stage=stage,
+        source=source_identity(),
+        source_root=str(HERE.parents[1]),
+        execution_root=str(root),
+        prefix=str(prefix),
+        python=exe(python, platform.python_version()),
+        python_entrypoint=sys.executable,
+        node=exe(node, version([str(node), "--version"], env, probe)),
+        uv=exe(uv, version([str(uv), "--version"], env, probe)),
+        renovate=exe(
+            dist / "renovate.js",
+            version([str(node), str(dist / "renovate.js"), "--version"], env, probe),
+        ),
+        validator=exe(dist / "config-validator.js", "45.3.2"),
+        distribution="npm-45.3.2-re2-fallback",
+        distribution_sha256=distribution(prefix),
+        npm_lock_sha256=digest((prefix / "package-lock.json").read_bytes()),
+        fixture_sha256=fixture_identity(),
+        executed_at=now(),
+        platform=platform.platform(),
+    )
 
 
 def run_case(
     case: Fixture,
     stage: Stage,
-    run_root: Path,
-    prefix: Path,
-    node: Path,
-    uv: Path,
-    distribution_hash: str,
-    repetition: int,
+    identity: RunIdentity,
+    repetition: Literal[1, 2],
 ) -> Verdict:
-    case_root = run_root / f"{case.case_id}-{stage}-{repetition}"
+    case_root = identity.case_path(f"{case.case_id}-{stage}-{repetition}")
     case_root.mkdir()
     fixture = case_root / "fixture"
     materialize(case, fixture)
-    env = environment(case_root, node, uv)
-    executable = prefix / "node_modules/renovate/dist/renovate.js"
-    tool = version([str(node), str(executable), "--version"], env, fixture)
-    if tool != "45.3.2" or platform.python_version() != "3.14.10":
-        raise ValueError("tool or Python version mismatch")
-    node_version = version([str(node), "--version"], env, fixture)
-    uv_version = version([str(uv), "--version"], env, fixture)
-    if node_version != "v26.13.1" or not uv_version.startswith("uv 0.13.9 "):
-        raise ValueError("runtime version mismatch")
-    command = [str(node), str(executable), "--platform=local", f"--dry-run={stage}"]
+    (case_root / "home").mkdir()
+    env = expected_environment(identity, case_root)
+    command = [identity.node.path, identity.renovate.path, "--platform=local", f"--dry-run={stage}"]
     before = snapshot(fixture)
     start = time.monotonic()
     proc = subprocess.run(
         command, cwd=fixture, env=env, capture_output=True, check=False, timeout=180
     )
-    receipt = Receipt(
+    receipt = BoundExtraction(
+        run_sha256=identity.fingerprint(),
+        repetition=repetition,
+        cwd=str(fixture),
         case_id=case.case_id,
         stage=stage,
         fixture_sha256=case.fingerprint(),
-        distribution="npm-45.3.2-re2-fallback",
+        distribution=identity.distribution,
         tool_version="45.3.2",
-        distribution_sha256=distribution_hash,
-        node_version=node_version,
-        python_version=platform.python_version(),
-        uv_version=uv_version,
+        distribution_sha256=identity.distribution_sha256,
+        node_version=identity.node.version,
+        python_version=identity.python.version,
+        uv_version=identity.uv.version,
         command=tuple(command),
         environment=env,
         executed_at=datetime.now(UTC).isoformat(),
@@ -195,21 +252,18 @@ def run_case(
     return verdict
 
 
-def validate_policies(root: Path, prefix: Path, node: Path, uv: Path) -> bool:
+def validate_policies(identity: RunIdentity) -> bool:
     policies = json.loads((HERE / "policies.json").read_bytes())
     all_correct = True
     for name, config in policies.items():
-        case_root = root / f"policy-{name}"
+        case_root = identity.case_path(f"policy-{name}")
         case_root.mkdir()
         path = case_root / "candidate.json"
         path.write_text(json.dumps(config, indent=2))
         before = digest(path.read_bytes())
-        env = environment(case_root, node, uv)
-        command = [
-            str(node),
-            str(prefix / "node_modules/renovate/dist/config-validator.js"),
-            "--strict",
-        ]
+        (case_root / "home").mkdir()
+        env = expected_environment(identity, case_root)
+        command = [identity.node.path, identity.validator.path, "--strict"]
         if name != "administrative":
             command.append("--no-global")
         command.append(str(path))
@@ -223,23 +277,27 @@ def validate_policies(root: Path, prefix: Path, node: Path, uv: Path) -> bool:
         correct = before == digest(path.read_bytes()) and policy_control_correct(
             name, path.read_bytes(), proc.stdout, proc.stderr, proc.returncode
         )
-        (case_root / "receipt.json").write_text(
-            json.dumps(
-                {
-                    "command": command,
-                    "environment": env,
-                    "expected_valid": expected_valid,
-                    "returncode": proc.returncode,
-                    "stdout_sha256": digest(proc.stdout),
-                    "stderr_sha256": digest(proc.stderr),
-                    "config_sha256": before,
-                    "elapsed_seconds": time.monotonic() - start,
-                    "control_correct": correct,
-                    "scope": "schema validation only",
-                },
-                indent=2,
-            )
+        receipt = PolicyReceipt(
+            run_sha256=identity.fingerprint(),
+            case_id=name,
+            repetition=1,
+            arm="renovate",
+            operation="policy",
+            fixture_sha256=before,
+            command=tuple(command),
+            environment=env,
+            cwd=str(case_root),
+            executed_at=now(),
+            returncode=proc.returncode,
+            stdout_sha256=digest(proc.stdout),
+            stderr_sha256=digest(proc.stderr),
+            config_sha256=before,
+            elapsed_seconds=time.monotonic() - start,
+            expected_valid=expected_valid,
+            control_correct=correct,
+            scope="schema validation only",
         )
+        (case_root / "receipt.json").write_text(receipt.model_dump_json(indent=2))
         print(
             json.dumps(
                 {
@@ -268,38 +326,15 @@ def main() -> int:
     root.mkdir(mode=0o700)
     node = Path(shutil.which("node") or "").resolve(strict=True)
     uv = Path(shutil.which("uv") or "").resolve(strict=True)
-    dist = distribution(prefix)
-    fixtures = load_fixtures(HERE / "corpus.json")
-    (root / "run-identity.json").write_text(
-        json.dumps(
-            {
-                **source_identity(),
-                "corpus_sha256": digest((HERE / "corpus.json").read_bytes()),
-                "policy_sha256": digest((HERE / "policies.json").read_bytes()),
-                "distribution_sha256": dist,
-                "npm_lock_sha256": digest((prefix / "package-lock.json").read_bytes()),
-                "npm_resolution_integrity": INTEGRITY,
-                "node_sha256": digest(node.read_bytes()),
-                "uv_sha256": digest(uv.read_bytes()),
-                "platform": platform.platform(),
-                "condition": "existing npm installation; native RE2 unavailable; not OCI",
-                "oci": "BLOCKED",
-                "dependabot": "BLOCKED",
-                "authenticated_pr": "NOT_APPLICABLE",
-                "lookup_index": "dated live observation; release availability not frozen",
-                "lookup_correctness": "BLOCKED: no frozen release availability oracle",
-            },
-            indent=2,
-        )
-    )
+    identity = capture_identity(root, prefix, node, uv, stage)
+    fixtures = corpus()
+    (root / "run-identity.json").write_text(identity.model_dump_json(indent=2))
     correct = True
     for case in fixtures:
         if stage == "lookup" and case.case_id != "mixed-extraction":
             continue
-        outcomes = [
-            run_case(case, stage, root, prefix, node, uv, dist, i)
-            for i in range(1, 3 if stage == "extract" else 2)
-        ]
+        repetitions: tuple[Literal[1, 2], ...] = (1, 2) if stage == "extract" else (1,)
+        outcomes = [run_case(case, stage, identity, i) for i in repetitions]
         correct = correct and all(
             extraction_control_correct(outcome)
             if stage == "extract"
@@ -318,7 +353,7 @@ def main() -> int:
             )
             correct = correct and repeat_equal
     if args.policies:
-        correct = validate_policies(root, prefix, node, uv) and correct
+        correct = validate_policies(identity) and correct
     # Even a fully passing extraction run is not Q1 qualification.
     return 0 if correct else 1
 

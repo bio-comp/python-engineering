@@ -267,7 +267,59 @@ def _records(files: dict[str, list[PackageFile]]) -> tuple[Observed, ...]:
     return tuple(records)
 
 
-def _parse(stdout: bytes, stage: Stage) -> tuple[tuple[Observed, ...], tuple[str, ...]]:
+class Re2Error(Raw):
+    code: Literal["MODULE_NOT_FOUND"]
+    message: str
+    requireStack: list[str] = Field(min_length=1)
+
+
+class Re2Warning(Log):
+    err: Re2Error
+
+
+class GithubWarning(Log):
+    repository: Literal["local"]
+    githubDeps: list[str] = Field(min_length=1)
+
+
+def re2_warning_allowed(raw: bytes, *, policy: bool = False) -> bool:
+    try:
+        event = Re2Warning.model_validate_json(raw)
+    except ValidationError:
+        return False
+    message = "RE2 not usable, falling back to RegExp"
+    if policy:
+        message += ": regex validation may be inaccurate"
+    return (
+        event.level == 40
+        and event.msg == message
+        and event.err.message.startswith("Cannot find module './build/Release/re2.node'")
+        and any(path.endswith("/re2/re2.js") for path in event.err.requireStack)
+    )
+
+
+def github_warning_allowed(raw: bytes, records: tuple[Observed, ...]) -> bool:
+    try:
+        event = GithubWarning.model_validate_json(raw)
+    except ValidationError:
+        return False
+    skipped = {
+        item.identity.name
+        for item in records
+        if item.skip_reason == "github-token-required"
+        and item.identity.datasource in {"github-tags", "github-releases"}
+    }
+    return (
+        event.level == 40
+        and event.msg == "GitHub token is required for some dependencies"
+        and set(event.githubDeps) == skipped
+        and len(event.githubDeps) == len(skipped)
+    )
+
+
+def _parse(
+    stdout: bytes, stage: Stage, distribution: str
+) -> tuple[tuple[Observed, ...], tuple[str, ...]]:
     if not stdout.endswith(b"\n"):
         raise ValueError("unterminated log stream")
     events: list[tuple[Log, bytes]] = []
@@ -303,12 +355,13 @@ def _parse(stdout: bytes, stage: Stage) -> tuple[tuple[Observed, ...], tuple[str
     ):
         raise ValueError("summary and payload counts disagree")
     problems: list[str] = []
-    for event, _ in events:
+    for event, raw in events:
         msg = event.msg
-        if event.level >= 40 and msg not in {
-            "RE2 not usable, falling back to RegExp",
-            "GitHub token is required for some dependencies",
-        }:
+        allowed = distribution == "npm-45.3.2-re2-fallback" and (
+            re2_warning_allowed(raw)
+            or (stage == "extract" and github_warning_allowed(raw, records))
+        )
+        if event.level >= 40 and not allowed:
             problems.append("warning/error: " + msg)
         elif re.search(
             r"failed to (?:parse|look up)|error parsing|datasource unknown error|artifacterror",
@@ -345,7 +398,7 @@ def judge_logs(
     if receipt.returncode or stderr:
         return result(State.FAIL, "nonzero exit or unexpected stderr")
     try:
-        records, diagnostic_errors = _parse(stdout, stage)
+        records, diagnostic_errors = _parse(stdout, stage, receipt.distribution)
     except (ValueError, ValidationError) as exc:
         return result(State.FAIL, "invalid log protocol: " + str(exc))
     expected = Counter(item.signature() for item in case.expected)
@@ -369,7 +422,11 @@ def judge_logs(
         elif (
             not item.required_skip
             and found.skip_reason
-            and (stage == "lookup" or found.skip_reason != "github-token-required")
+            and (
+                stage == "lookup"
+                or found.skip_reason != "github-token-required"
+                or found.identity.datasource not in {"github-tags", "github-releases"}
+            )
         ):
             errors.append("critical dependency skipped: " + item.name)
         if (
@@ -422,9 +479,12 @@ def extraction_control_correct(verdict: Verdict) -> bool:
     return (
         verdict.state == State.FAIL
         and not verdict.records
-        and "diagnostic: Failed to parse and validate pyproject file" in verdict.diagnostics
-        and "empty inventory" in verdict.diagnostics
-        and "missing or unexpected dependency identities" in verdict.diagnostics
+        and set(verdict.diagnostics)
+        == {
+            "diagnostic: Failed to parse and validate pyproject file",
+            "empty inventory",
+            "missing or unexpected dependency identities",
+        }
     )
 
 
@@ -434,6 +494,8 @@ def policy_control_correct(
     stdout: bytes,
     stderr: bytes,
     returncode: int,
+    *,
+    distribution: str = "npm-45.3.2-re2-fallback",
 ) -> bool:
     """An unrelated failure is not a successful negative control."""
     if stderr or not stdout.endswith(b"\n"):
@@ -454,8 +516,10 @@ def policy_control_correct(
         (event, raw)
         for event, raw in events
         if event.level >= 40
-        and event.msg
-        != "RE2 not usable, falling back to RegExp: regex validation may be inaccurate"
+        and not (
+            distribution == "npm-45.3.2-re2-fallback"
+            and re2_warning_allowed(json.dumps(raw).encode(), policy=True)
+        )
     ]
     if name in {"repository", "administrative"}:
         return returncode == 0 and successes == 1 and not significant

@@ -10,30 +10,38 @@ import argparse
 import importlib.metadata
 import json
 import platform
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
-
+from experiments.e017.evidence import (
+    Arm,
+    BoundExtraction,
+    EvidenceError,
+    PolicyReceipt,
+    RunIdentity,
+    RunStage,
+    bind_extraction,
+    bind_process,
+    expected_environment,
+    read_bytes,
+    read_model,
+    require,
+)
 from experiments.e017.oracle import (
-    Receipt,
     State,
     Verdict,
     digest,
     extraction_control_correct,
     judge_logs,
-    load_fixtures,
     policy_control_correct,
 )
-from experiments.e017.run import HERE, source_identity
+from experiments.e017.run import HERE, corpus, fixture_identity, snapshot, source_identity
+from experiments.e017.updates import replay_update, specs
 from python_engineering.reporting import REPORT_GENERATOR_VERSION
 from python_engineering.reporting.cli import build_report
 from python_engineering.reporting.models import (
-    SHA256,
     Condition,
-    Contract,
     Environment,
     EssentialGate,
     Evidence,
@@ -47,27 +55,14 @@ from python_engineering.reporting.models import (
 )
 
 
-class UpdateVerdict(Contract):
-    state: State
-    diagnostics: tuple[str, ...]
-    after: dict[str, SHA256]
-    repeated: dict[str, SHA256] | None = None
-    expected_state: Literal["FAIL"] | None = None
-    control_correct: bool | None = None
-    raw_manifest_mutated: bool | None = None
-
-
-class PolicyVerdict(Contract):
-    command: tuple[str, ...]
-    environment: dict[str, str]
-    expected_valid: bool
-    returncode: int
-    stdout_sha256: SHA256
-    stderr_sha256: SHA256
-    config_sha256: SHA256
-    elapsed_seconds: float = Field(ge=0, allow_inf_nan=False)
-    control_correct: bool
-    scope: str
+def verify_population(root: Path, expected: set[str], optional: set[str]) -> None:
+    if not root.is_dir():
+        raise EvidenceError(State.BLOCKED, "missing stage evidence directory")
+    require(not root.is_symlink(), "symlinked stage directory")
+    found = {item.name for item in root.iterdir() if item.is_dir()}
+    if expected - found:
+        raise EvidenceError(State.BLOCKED, "missing required case population")
+    require(not found - expected - optional, "unexpected case population")
 
 
 def make_run(
@@ -76,26 +71,96 @@ def make_run(
     lookup: Path,
     updates: Path,
     run_id: str,
+    *,
+    allow_synthetic: bool = False,
+) -> Run:
+    """Reject incomplete or inconsistent evidence before producing a report."""
+    try:
+        return _make_run(root, extract, lookup, updates, run_id, allow_synthetic=allow_synthetic)
+    except EvidenceError:
+        raise
+    except FileNotFoundError as exc:
+        raise EvidenceError(State.BLOCKED, "missing required artifact") from exc
+    except (ValueError, OSError) as exc:
+        raise EvidenceError(State.FAIL, str(exc)) from exc
+
+
+def _make_run(
+    root: Path,
+    extract: Path,
+    lookup: Path,
+    updates: Path,
+    run_id: str,
+    *,
+    allow_synthetic: bool,
 ) -> Run:
     repo = HERE.parents[1]
-    identity = source_identity()
-    sha = str(identity["source_commit"])
-    if identity["source_dirty"]:
-        raise ValueError("report requires the exact clean experiment source")
-    for directory, name in (
-        (extract, "run-identity.json"),
-        (lookup, "run-identity.json"),
-        (updates, "identity.json"),
-    ):
-        recorded = json.loads((directory / name).read_bytes())
-        if (
-            recorded["source_commit"] != sha
-            or recorded["source_dirty"]
-            or recorded["source_files"] != identity["source_files"]
-            or recorded["lockfile_sha256"] != identity["lockfile_sha256"]
-            or recorded["pyproject_sha256"] != identity["pyproject_sha256"]
-        ):
-            raise ValueError("run source identity mismatch")
+    source = source_identity()
+    stage_paths: tuple[tuple[RunStage, Path, str], ...] = (
+        ("extract", extract, "run-identity.json"),
+        ("lookup", lookup, "run-identity.json"),
+        ("updates", updates, "identity.json"),
+    )
+    identities = {}
+    for stage, directory, filename in stage_paths:
+        require(
+            directory.resolve().is_relative_to(root.resolve()),
+            "stage evidence outside authorized root",
+        )
+        identity = read_model(directory / filename, RunIdentity)
+        require(
+            identity.stage == stage and identity.source == source,
+            "run source/stage identity mismatch",
+        )
+        require(identity.fixture_sha256 == fixture_identity(), "run fixture identity mismatch")
+        require(
+            identity.distribution != "synthetic-control" or allow_synthetic,
+            "synthetic evidence cannot support genuine execution",
+        )
+        require(
+            identity.distribution == "synthetic-control" or not source.source_dirty,
+            "real report requires exact clean source",
+        )
+        identities[stage] = identity
+    extraction_identity = identities["extract"]
+    # Stage roots and capture timestamps differ; every other material condition
+    # must match, including exact executable and distribution identities.
+    for identity in identities.values():
+        require(
+            identity.model_dump(exclude={"stage", "execution_root", "executed_at"})
+            == extraction_identity.model_dump(exclude={"stage", "execution_root", "executed_at"}),
+            "inconsistent comparator/run identities",
+        )
+    require(
+        len({identity.execution_root for identity in identities.values()}) == 3,
+        "duplicate execution stage roots",
+    )
+    require(
+        len({Path(identity.execution_root).parent for identity in identities.values()}) == 1,
+        "mixed experiment bundles",
+    )
+    synthetic = extraction_identity.distribution == "synthetic-control"
+    sha = source.source_commit
+    fixture_cases = corpus()
+    policy_names = ("repository", "administrative", "obsolete", "invalid-manager", "invalid-type")
+    update_specs = specs()
+    update_cases: tuple[tuple[str, Literal[1, 2, 3]], ...] = (
+        *((spec.case_id, 1) for spec in update_specs),
+        *((spec.case_id, 2) for spec in update_specs),
+        (update_specs[0].case_id, 3),
+    )
+    verify_population(
+        extract,
+        {f"{case.case_id}-extract-{rep}" for case in fixture_cases for rep in (1, 2)}
+        | {f"policy-{name}" for name in policy_names},
+        {"identity-probe"},
+    )
+    verify_population(lookup, {"mixed-extraction-lookup-1"}, {"identity-probe"})
+    verify_population(
+        updates,
+        {f"{case}-{arm}-{rep}" for case, rep in update_cases for arm in ("native-uv", "renovate")},
+        {"identity-probe", "shared-uv-cache"},
+    )
     evidence: list[Evidence] = []
     observations: list[Observation] = []
     gates: list[EssentialGate] = []
@@ -107,31 +172,32 @@ def make_run(
         evidence.append(
             Evidence(
                 evidence_id=key,
-                grade=EvidenceGrade.CONTROLLED,
+                grade=EvidenceGrade.SYNTHETIC if synthetic else EvidenceGrade.CONTROLLED,
                 source=path.relative_to(root).as_posix(),
                 locator=path.name,
-                source_sha256=digest(path.read_bytes()),
+                source_sha256=digest(read_bytes(path)),
                 note=note,
             )
         )
         return key
 
-    fixture_cases = load_fixtures(HERE / "corpus.json")
     extraction_ok = True
-    refs = []
+    refs = [register(extract / "run-identity.json", "Versioned extraction condition identity.")]
     for case in fixture_cases:
         verdicts = []
         for rep in (1, 2):
             path = extract / f"{case.case_id}-extract-{rep}"
-            rec = Receipt.model_validate_json((path / "receipt.json").read_bytes())
+            rec = read_model(path / "receipt.json", BoundExtraction)
+            bind_extraction(extraction_identity, rec, case.case_id, rep, case.fingerprint())
+            require(snapshot(path / "fixture") == rec.after, "extraction retained bytes mismatch")
             verdict = judge_logs(
                 case,
                 "extract",
                 rec,
-                (path / "stdout.jsonl").read_bytes(),
-                (path / "stderr.txt").read_bytes(),
+                read_bytes(path / "stdout.jsonl"),
+                read_bytes(path / "stderr.txt"),
             )
-            saved = Verdict.model_validate_json((path / "verdict.json").read_bytes())
+            saved = read_model(path / "verdict.json", Verdict)
             if verdict != saved:
                 raise ValueError("saved extraction verdict differs from replay")
             verdicts.append(verdict)
@@ -148,49 +214,80 @@ def make_run(
         )
     )
     path = lookup / "mixed-extraction-lookup-1"
-    rec = Receipt.model_validate_json((path / "receipt.json").read_bytes())
+    rec = read_model(path / "receipt.json", BoundExtraction)
+    bind_extraction(
+        identities["lookup"], rec, fixture_cases[0].case_id, 1, fixture_cases[0].fingerprint()
+    )
+    require(snapshot(path / "fixture") == rec.after, "lookup retained bytes mismatch")
     verdict = judge_logs(
         fixture_cases[0],
         "lookup",
         rec,
-        (path / "stdout.jsonl").read_bytes(),
-        (path / "stderr.txt").read_bytes(),
+        read_bytes(path / "stdout.jsonl"),
+        read_bytes(path / "stderr.txt"),
     )
-    if verdict != Verdict.model_validate_json((path / "verdict.json").read_bytes()):
+    if verdict != read_model(path / "verdict.json", Verdict):
         raise ValueError("saved lookup verdict differs from replay")
     gates.append(
         EssentialGate(
             gate_id="lookup",
             requirement="Complete critical lookup evidence",
             passed=verdict.state == State.PASS,
-            evidence_ids=(register(path / "verdict.json", "Live lookup replay."),),
+            evidence_ids=(
+                register(path / "verdict.json", "Live lookup replay."),
+                register(lookup / "run-identity.json", "Versioned lookup identity."),
+            ),
             note="Release availability not independently frozen.",
         )
     )
     refs = []
     policy_ok = True
-    for name in ("repository", "administrative", "obsolete", "invalid-manager", "invalid-type"):
+    for name in policy_names:
         path = extract / f"policy-{name}"
-        rec_policy = PolicyVerdict.model_validate_json((path / "receipt.json").read_bytes())
-        if (
-            rec_policy.stdout_sha256 != digest((path / "stdout.jsonl").read_bytes())
-            or rec_policy.stderr_sha256 != digest((path / "stderr.txt").read_bytes())
-            or rec_policy.config_sha256 != digest((path / "candidate.json").read_bytes())
-        ):
-            raise ValueError("configuration receipt digest mismatch")
-        refs.append(register(path / "receipt.json", "Exact-version schema validator receipt."))
+        rec_policy = read_model(path / "receipt.json", PolicyReceipt)
         config = json.loads((HERE / "policies.json").read_bytes())[name]
-        if json.loads((path / "candidate.json").read_bytes()) != config:
-            raise ValueError("policy fixture mismatch")
+        candidate = read_bytes(path / "candidate.json")
+        require(candidate == json.dumps(config, indent=2).encode(), "policy fixture mismatch")
+        candidate_sha = digest(candidate)
+        require(
+            rec_policy.config_sha256 == candidate_sha
+            and rec_policy.expected_valid == (name in {"repository", "administrative"}),
+            "policy identity/expected validity mismatch",
+        )
+        case_path = extraction_identity.case_path(f"policy-{name}")
+        command: tuple[str, ...] = (
+            extraction_identity.node.path,
+            extraction_identity.validator.path,
+            "--strict",
+        )
+        if name != "administrative":
+            command += ("--no-global",)
+        command += (str(case_path / "candidate.json"),)
+        stdout, stderr = read_bytes(path / "stdout.jsonl"), read_bytes(path / "stderr.txt")
+        bind_process(
+            extraction_identity,
+            rec_policy,
+            case_id=name,
+            repetition=1,
+            arm="renovate",
+            operation="policy",
+            fixture_sha=candidate_sha,
+            command=command,
+            cwd=case_path,
+            env=expected_environment(extraction_identity, case_path),
+            stdout=stdout,
+            stderr=stderr,
+        )
+        refs.append(register(path / "receipt.json", "Exact-version schema validator receipt."))
         computed = policy_control_correct(
             name,
-            (path / "candidate.json").read_bytes(),
-            (path / "stdout.jsonl").read_bytes(),
-            (path / "stderr.txt").read_bytes(),
+            candidate,
+            stdout,
+            stderr,
             rec_policy.returncode,
+            distribution=extraction_identity.distribution,
         )
-        if computed != rec_policy.control_correct:
-            raise ValueError("saved policy verdict differs from replay")
+        require(computed == rec_policy.control_correct, "saved policy verdict differs from replay")
         policy_ok = policy_ok and computed
     gates.append(
         EssentialGate(
@@ -202,29 +299,27 @@ def make_run(
         )
     )
     update_ok = True
-    refs = []
-    arms: tuple[tuple[str, Literal["baseline", "candidate"]], ...] = (
+    refs = [register(updates / "identity.json", "Versioned update identity.")]
+    arms: tuple[tuple[Arm, Literal["baseline", "candidate"]], ...] = (
         ("native-uv", "baseline"),
         ("renovate", "candidate"),
     )
-    for update_case, rep in (
-        ("requests-regression", 1),
-        ("requests-regression", 2),
-        ("idna-independent", 1),
-        ("idna-independent", 2),
-        ("requests-regression", 3),
-    ):
+    outputs: dict[str, list[dict[str, bytes]]] = {}
+    for update_case, rep in update_cases:
         conflict = rep == 3
         case_id = "requests-conflict" if conflict else update_case
-        pairs = []
+        spec = next(spec for spec in update_specs if spec.case_id == update_case)
         for arm, condition in arms:
             path = updates / f"{update_case}-{arm}-{rep}"
-            result = UpdateVerdict.model_validate_json((path / "verdict.json").read_bytes())
+            result, actual = replay_update(identities["updates"], spec, arm, rep, updates)
             expected = State.FAIL if conflict else State.PASS
             valid = result.state == expected and (not conflict or result.control_correct is True)
             update_ok = update_ok and valid
-            refs.append(register(path / "verdict.json", "Runner-recorded update/lock acceptance."))
-            pairs.append(result.after)
+            refs.append(
+                register(path / "verdict.json", "Update verdict reconstructed from retained bytes.")
+            )
+            if not conflict:
+                outputs.setdefault(update_case, []).append(actual)
             measured = result.state in (State.PASS, State.FAIL)
             observations.append(
                 Observation(
@@ -239,15 +334,15 @@ def make_run(
                     note="; ".join(result.diagnostics) or "Expected manifest/lock result accepted.",
                 )
             )
-        if not conflict:
-            update_ok = update_ok and pairs[0] == pairs[1]
+    for results in outputs.values():
+        update_ok = update_ok and len(results) == 4 and all(x == results[0] for x in results)
     gates.append(
         EssentialGate(
             gate_id="updates",
             requirement="Matched targeted update controls",
             passed=update_ok,
             evidence_ids=tuple(refs),
-            note="Source-declared runner verdicts; not independent replication.",
+            note="Replayed raw receipts and byte snapshots; matched across both repetitions.",
         )
     )
     for key, requirement in (
@@ -266,10 +361,10 @@ def make_run(
         )
     return Run(
         schema_version="1.0",
-        rubric_revision="e017-q1-case-acceptance-v1",
+        rubric_revision="e017-q1-case-acceptance-v2",
         experiment=Experiment(
             experiment_id="E-017",
-            protocol_revision="Q1-local-v1",
+            protocol_revision="Q1-local-r1-v2",
             title="Renovate Q1 local evidence",
             run_id=run_id,
             executed_at=datetime.now(UTC),
@@ -280,8 +375,8 @@ def make_run(
         ),
         environment=Environment(
             python_implementation=platform.python_implementation(),
-            python_version=platform.python_version(),
-            interpreter_executable=sys.executable,
+            python_version=extraction_identity.python.version,
+            interpreter_executable=extraction_identity.python.path,
             uv_version="0.13.9",
             os_name=platform.system(),
             os_release=platform.release(),
@@ -289,10 +384,10 @@ def make_run(
             repository="bio-comp/python-engineering",
             branch="feat/issue21-renovate-q1",
             commit_sha=sha,
-            fixture_revision=digest((HERE / "corpus.json").read_bytes()),
+            fixture_revision=digest(json.dumps(fixture_identity(), sort_keys=True).encode()),
             lockfile_sha256=digest((repo / "uv.lock").read_bytes()),
             pyproject_sha256=digest((repo / "pyproject.toml").read_bytes()),
-            harness_version="e017-q1-v1",
+            harness_version="e017-q1-r1-v2",
             generator_version=REPORT_GENERATOR_VERSION,
             commands=(
                 "python -m experiments.e017.run --stage extract --policies",
@@ -337,7 +432,7 @@ def make_run(
             disposition="INCOMPLETE; no practice promotion",
             proposed_next_step="Independent review; close blocked arms before operational Q2.",
         ),
-        synthetic_demonstration=False,
+        synthetic_demonstration=synthetic,
     )
 
 

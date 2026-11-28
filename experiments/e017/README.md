@@ -25,15 +25,25 @@ uv run --locked python -m experiments.e017.report --root "$OUT" --extract "$OUT/
 
 Live failures are evidence, not a reason to discard output. Lookup can exit
 nonzero when Renovate exits zero. The report requires clean, matching source
-identities and replays the extraction/lookup oracle from raw receipts. It uses
-the existing reporting system. Update verdicts in the report
-are runner-recorded; independent review must inspect their raw artifacts.
-Configuration controls are independently replayed from raw logs.
+identities and replays extraction, lookup, configuration and update verdicts
+from typed receipts and retained raw artifacts. It uses the existing reporting
+system. R1 evidence schema v2 binds all receipts to the exact source, fixture,
+distribution, interpreter, executable and stage identities. The update arm
+retains initial, immediate generated, final and repeated byte snapshots, plus
+the actual resolver invocations (including attempted and resulting trees).
+Missing or contradictory evidence prevents report admission; the consumer never
+promotes a stored verdict without replay. Synthetic offline tests exercise the
+same consumer through an explicit synthetic-only interface; the report CLI does
+not admit synthetic evidence as genuine execution. The original v1 evidence
+remains immutable and can support only properties actually retained in it;
+its missing independently retained intermediate states and child resolver
+receipts cannot be reconstructed retrospectively.
 
 ## Scope
 
 The JSON corpus contains independently specified expectations, including deliberate
-exclusions and an invalid TOML negative control. A separate frozen manifest/lock
+exclusions and an invalid TOML negative control. A separate frozen-revision
+pre-commit case extends the original corpus without changing its bytes. A separate frozen manifest/lock
 population contains the targeted requests calibration regression and idna case.
 The latter is new evaluation material, not blind data. Lookup is a dated live
 observation; release availability is not frozen or independently established.
