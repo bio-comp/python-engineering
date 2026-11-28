@@ -25,6 +25,7 @@ from experiments.e017.evidence import (
     RunIdentity,
     RunStage,
     expected_environment,
+    log_context,
 )
 from experiments.e017.oracle import (
     Fixture,
@@ -101,7 +102,12 @@ def tree(path: Path, files: dict[str, bytes]) -> None:
         item.write_bytes(data)
 
 
-def extract_logs(case: Fixture, stage: Literal["extract", "lookup"]) -> bytes:
+def extract_logs(
+    case: Fixture,
+    stage: Literal["extract", "lookup"],
+    context: str,
+    rep: int,
+) -> bytes:
     managers: dict[str, dict[str, list[dict[str, object]]]] = {}
     if case.case_id != "malformed-toml":
         for dep in case.expected:
@@ -150,6 +156,23 @@ def extract_logs(case: Fixture, stage: Literal["extract", "lookup"]) -> bytes:
             {"msg": "Repository finished", "level": 30},
         ]
     )
+    for event in events:
+        if event["msg"] in {
+            "Dependency extraction complete",
+            "Extracted dependencies",
+            "packageFiles with updates",
+            "Repository finished",
+        }:
+            event.update(
+                name="renovate",
+                hostname="synthetic",
+                pid=100 + rep,
+                logContext=context,
+                repository="local",
+                time=TIME,
+                v=0,
+            )
+            event["level"] = 20 if event["msg"] == "packageFiles with updates" else 30
     return lines(*events)
 
 
@@ -164,8 +187,9 @@ def create_extraction(
     path.mkdir()
     data = {name: content.encode() for name, content in case.files.items()}
     tree(path / "fixture", data)
-    raw = extract_logs(case, stage)
+    raw = extract_logs(case, stage, log_context(ident, path), rep)
     rec = BoundExtraction(
+        started_at=TIME,
         run_sha256=ident.fingerprint(),
         repetition=rep,
         cwd=str(path / "fixture"),
@@ -232,6 +256,7 @@ def create_policy(root: Path, ident: RunIdentity, name: str, config: object) -> 
         str(path / "candidate.json"),
     )
     rec = PolicyReceipt(
+        started_at=TIME,
         run_sha256=ident.fingerprint(),
         case_id=name,
         repetition=1,
@@ -272,6 +297,7 @@ def make_process(
     code: int,
 ) -> ProcessReceipt:
     return ProcessReceipt(
+        started_at=TIME,
         run_sha256=ident.fingerprint(),
         case_id=spec.case_id,
         repetition=rep,
@@ -413,6 +439,10 @@ def bundle(tmp_path: Path) -> Path:
         path.mkdir(parents=True)
         filename = "identity.json" if ident.stage == "updates" else "run-identity.json"
         (path / filename).write_text(ident.model_dump_json())
+    tree(
+        root / "extract/expected-inputs",
+        {name: (HERE / name).read_bytes() for name in fixture_identity()},
+    )
     for case in corpus():
         create_extraction(root, ex, case, "extract", 1)
         create_extraction(root, ex, case, "extract", 2)
@@ -702,3 +732,248 @@ def test_fatal_component_conflict_is_not_exempt(bundle: Path) -> None:
     fatal = lines({"msg": "RE2 not usable, falling back to RegExp", "level": 60})
     with pytest.raises(ValueError):
         component_result(fatal + raw)
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "spliced",
+        "pid",
+        "context",
+        "missing-context",
+        "repository",
+        "reversed-time",
+        "outside-time",
+    ],
+)
+def test_material_log_context_regression(bundle: Path, variant: str) -> None:
+    path = bundle / "extract/mixed-extraction-extract-1"
+    events = [json.loads(line) for line in (path / "stdout.jsonl").read_bytes().splitlines()]
+    payload = next(event for event in events if event["msg"] == "Extracted dependencies")
+    if variant == "spliced":
+        other = path.parent / "mixed-extraction-extract-2/stdout.jsonl"
+        replacement = next(
+            json.loads(line)
+            for line in other.read_bytes().splitlines()
+            if json.loads(line)["msg"] == "Extracted dependencies"
+        )
+        payload.clear()
+        payload.update(replacement)
+    elif variant == "pid":
+        payload["pid"] += 1
+    elif variant == "context":
+        payload["logContext"] = "other-invocation"
+    elif variant == "missing-context":
+        del payload["logContext"]
+    elif variant == "repository":
+        payload["repository"] = "other"
+    elif variant == "reversed-time":
+        payload["time"] = "2026-11-27T19:59:59Z"
+    else:
+        for event in events:
+            if "time" in event:
+                event["time"] = "2099-01-01T00:00:00Z"
+    raw = lines(*events)
+    (path / "stdout.jsonl").write_bytes(raw)
+    change(path / "receipt.json", stdout_sha256=digest(raw))
+    with pytest.raises(EvidenceError):
+        report(bundle)
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "future-child",
+        "child-before-parent",
+        "reversed-parent",
+        "overlap",
+        "before-run",
+        "cross-case",
+        "cross-stage",
+        "missing-start",
+    ],
+)
+def test_receipt_chronology_regression(bundle: Path, variant: str) -> None:
+    path = bundle / "updates/requests-regression-renovate-1"
+    if variant == "future-child":
+        change(path / "uv-attempts/3/receipt.json", executed_at="2099-01-01T00:00:00Z")
+    elif variant == "child-before-parent":
+        change(path / "uv-attempts/2/receipt.json", started_at="2026-11-27T19:59:59Z")
+    elif variant == "reversed-parent":
+        change(path / "update.json", started_at="2026-11-27T20:00:02Z")
+    elif variant in {"overlap", "cross-case"}:
+        phase, index = ("update", 2) if variant == "overlap" else ("repeat", 4)
+        for receipt in (path / f"{phase}.json", path / f"uv-attempts/{index}/receipt.json"):
+            change(receipt, executed_at="2026-11-27T20:00:03Z")
+    elif variant == "before-run":
+        change(path / "initial-check.json", started_at="2026-11-27T19:59:59Z")
+    elif variant == "cross-stage":
+        change(
+            bundle / "lookup/mixed-extraction-lookup-1/receipt.json",
+            executed_at="2026-11-27T20:01:00Z",
+        )
+    else:
+        receipt = path / "initial-check.json"
+        raw = json.loads(receipt.read_bytes())
+        del raw["started_at"]
+        write_json(receipt, raw)
+    with pytest.raises(EvidenceError):
+        report(bundle)
+
+
+def test_valid_nested_timing(bundle: Path) -> None:
+    # The final case can finish later than the synthetic zero-duration predecessors.
+    path = bundle / "updates/requests-regression-native-uv-3"
+    for phase, index, second in (("initial-check", 1, 1), ("update", 2, 3)):
+        stamp = f"2026-11-27T20:00:{second:02d}"
+        change(path / f"{phase}.json", started_at=stamp + "Z", executed_at=stamp + ".900Z")
+        change(
+            path / f"uv-attempts/{index}/receipt.json",
+            started_at=stamp + ".100Z",
+            executed_at=stamp + ".800Z",
+        )
+    assert gate(report(bundle), "updates") is True
+
+
+@pytest.mark.parametrize(
+    ("case_name", "message", "level"),
+    [
+        ("obsolete", "Config migration necessary", 60),
+        ("invalid-type", "Config migration necessary", 50),
+        ("invalid-manager", "Found errors in configuration", 60),
+        ("invalid-manager", "Found errors in configuration", 40),
+        ("repository", "Config validated successfully against 1 file(s)", 20),
+        ("repository", "Config validated successfully against 1 file(s)", 60),
+    ],
+)
+def test_policy_exact_severity(bundle: Path, case_name: str, message: str, level: int) -> None:
+    path = bundle / f"extract/policy-{case_name}"
+    events = [json.loads(line) for line in (path / "stdout.jsonl").read_bytes().splitlines()]
+    for event in events:
+        if event["msg"] == message:
+            event["level"] = level
+    raw = lines(*events)
+    (path / "stdout.jsonl").write_bytes(raw)
+    change(path / "receipt.json", stdout_sha256=digest(raw))
+    with pytest.raises(EvidenceError):
+        report(bundle)
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "resolver-receipt",
+        "raw-log",
+        "intermediate",
+        "altered",
+        "normalized-only",
+        "no-root",
+    ],
+)
+def test_required_report_population(bundle: Path, tmp_path: Path, variant: str) -> None:
+    from python_engineering.reporting.integrity import (
+        ReceiptStatus,
+        assert_required_replay,
+        verify_receipts,
+    )
+
+    run = report(bundle)
+    aggregate = next(e for e in run.evidence if e.replay_manifest is not None)
+    assert aggregate.replay_manifest is not None
+    members = aggregate.replay_manifest.members
+    assert len(members) > 700
+    assert "extract/expected-inputs/corpus.json" in members
+    assert "updates/requests-regression-renovate-1/uv-attempts/3/receipt.json" in members
+    checks = verify_receipts(run, evidence_root=bundle)
+    assert next(c for c in checks if c.evidence_id == aggregate.evidence_id).status == (
+        ReceiptStatus.REPLAY_VERIFIED
+    )
+    assert_required_replay(run, checks)
+    source = tmp_path / "frozen-run.json"
+    source.write_text(run.model_dump_json())
+    if variant == "normalized-only":
+        stripped = tmp_path / "stripped"
+        stripped.mkdir()
+        for item in run.evidence:
+            target = stripped / item.source
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(bundle / item.source, target)
+        evidence_root: Path | None = stripped
+    elif variant == "no-root":
+        evidence_root = None
+    else:
+        evidence_root = bundle
+        case = bundle / "updates/requests-regression-renovate-1"
+        if variant == "resolver-receipt":
+            (case / "uv-attempts/3/receipt.json").unlink()
+        elif variant == "raw-log":
+            (bundle / "extract/mixed-extraction-extract-1/stdout.jsonl").unlink()
+        elif variant == "intermediate":
+            (case / "generated/uv.lock").unlink()
+        else:
+            (case / "uv-attempts/3/stderr").write_bytes(b"changed after report")
+    checks = verify_receipts(run, evidence_root=evidence_root)
+    assert next(c for c in checks if c.evidence_id == aggregate.evidence_id).status != (
+        ReceiptStatus.REPLAY_VERIFIED
+    )
+    with pytest.raises(ValueError):
+        assert_required_replay(run, checks)
+    with pytest.raises(ValueError):
+        build_report(source, tmp_path / "must-not-publish", evidence_root=evidence_root)
+    assert not (tmp_path / "must-not-publish").exists()
+
+
+def test_real_uv_probe_lifecycle(tmp_path: Path) -> None:
+    """Actual child process, local files only; no uv or package index invocation."""
+    import os
+    import subprocess
+    import sys
+    from datetime import UTC, datetime
+
+    root = tmp_path.resolve() / "probe"
+    fixture = root / "fixture"
+    tree(fixture, {"sentinel.txt": b"before"})
+    context = {
+        "run_sha256": digest(b"synthetic"),
+        "case_id": "isolated-probe",
+        "repetition": 1,
+        "arm": "native-uv",
+        "fixture_sha256": digest(b"fixture"),
+    }
+    env = {"PATH": os.defpath}
+    script = (
+        "from pathlib import Path; import sys; "
+        "Path('sentinel.txt').write_bytes(b'after'); "
+        "print('child stdout'); print('child stderr', file=sys.stderr); sys.exit(7)"
+    )
+    command = [
+        sys.executable,
+        str(HERE / "uv_probe.py"),
+        str(root),
+        str(fixture),
+        sys.executable,
+        json.dumps(context),
+        json.dumps(env),
+        "-c",
+        script,
+    ]
+    before = datetime.now(UTC)
+    proc = subprocess.run(command, cwd=fixture, capture_output=True, check=False)
+    after = datetime.now(UTC)
+    path = root / "uv-attempts/1"
+    rec = ResolverReceipt.model_validate_json((path / "receipt.json").read_bytes())
+    assert proc.returncode == rec.returncode == 7
+    assert (
+        before
+        <= datetime.fromisoformat(rec.started_at)
+        <= (datetime.fromisoformat(rec.executed_at))
+        <= after
+    )
+    assert rec.before == {"sentinel.txt": digest(b"before")}
+    assert rec.after == {"sentinel.txt": digest(b"after")}
+    assert (path / "before/sentinel.txt").read_bytes() == b"before"
+    assert (path / "after/sentinel.txt").read_bytes() == b"after"
+    assert rec.stdout_sha256 == digest(proc.stdout) == digest((path / "stdout").read_bytes())
+    assert rec.stderr_sha256 == digest(proc.stderr) == digest((path / "stderr").read_bytes())
+    assert rec.command == (sys.executable, "-c", script)
+    assert json.loads((root / "uv-invocations.jsonl").read_text()) == ["-c", script]

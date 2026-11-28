@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
+from datetime import datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
+from itertools import pairwise
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
@@ -317,6 +319,62 @@ def github_warning_allowed(raw: bytes, records: tuple[Observed, ...]) -> bool:
     )
 
 
+# Bunyan timestamps have millisecond precision; the harness uses the same host
+# wall clock. Allow one millisecond for quantization, not arbitrary clock jumps.
+CLOCK_SLOP = timedelta(milliseconds=1)
+
+
+class MaterialLog(Log):
+    name: Literal["renovate"]
+    pid: int = Field(gt=0)
+    hostname: str = Field(min_length=1)
+    logContext: str = Field(min_length=1)
+    repository: Literal["local"]
+    time: str
+    v: Literal[0]
+
+
+def material_context(
+    stdout: bytes,
+    stage: Stage,
+    *,
+    context: str | None = None,
+    started_at: str | None = None,
+    completed_at: str | None = None,
+) -> None:
+    """Bind the three required records; startup records need no repo metadata."""
+    result = "Extracted dependencies" if stage == "extract" else "packageFiles with updates"
+    names = ("Dependency extraction complete", result, "Repository finished")
+    material: list[MaterialLog] = []
+    for line in stdout.splitlines():
+        unique_json(line)
+        log = Log.model_validate_json(line)
+        if log.msg in names:
+            material.append(MaterialLog.model_validate_json(line))
+    if tuple(item.msg for item in material) != names:
+        raise ValueError("invalid material log population/order")
+    first = material[0]
+    if any(
+        (item.pid, item.hostname, item.logContext, item.repository)
+        != (first.pid, first.hostname, first.logContext, first.repository)
+        for item in material
+    ):
+        raise ValueError("mixed material execution context")
+    if context is not None and first.logContext != context:
+        raise ValueError("material log context differs from invocation")
+    if tuple(item.level for item in material) != (30, 30 if stage == "extract" else 20, 30):
+        raise ValueError("invalid material log severity")
+    times = [datetime.fromisoformat(item.time) for item in material]
+    if any(t.utcoffset() is None for t in times):
+        raise ValueError("material log timestamps must be offset-aware")
+    if any(a > b + CLOCK_SLOP for a, b in pairwise(times)):
+        raise ValueError("inconsistent material log chronology")
+    if started_at is not None and min(times) < datetime.fromisoformat(started_at) - CLOCK_SLOP:
+        raise ValueError("material log predates execution")
+    if completed_at is not None and max(times) > datetime.fromisoformat(completed_at) + CLOCK_SLOP:
+        raise ValueError("material log postdates execution")
+
+
 def _parse(
     stdout: bytes, stage: Stage, distribution: str
 ) -> tuple[tuple[Observed, ...], tuple[str, ...]]:
@@ -398,6 +456,8 @@ def judge_logs(
     if receipt.returncode or stderr:
         return result(State.FAIL, "nonzero exit or unexpected stderr")
     try:
+        if receipt.distribution == "npm-45.3.2-re2-fallback":
+            material_context(stdout, stage)
         records, diagnostic_errors = _parse(stdout, stage, receipt.distribution)
     except (ValueError, ValidationError) as exc:
         return result(State.FAIL, "invalid log protocol: " + str(exc))
@@ -509,8 +569,17 @@ def policy_control_correct(
             events.append((Log.model_validate_json(line), json.loads(line)))
     except ValueError, ValidationError:
         return False
+    for event, _ in events:
+        if (
+            (event.msg == "Config validated successfully against 1 file(s)" and event.level != 30)
+            or (event.msg == "Config migration necessary" and event.level != 40)
+            or (event.msg.startswith("Config migration diff:") and event.level != 40)
+            or (event.msg == "Found errors in configuration" and event.level != 50)
+        ):
+            return False
     successes = sum(
-        event.msg == "Config validated successfully against 1 file(s)" for event, _ in events
+        event.msg == "Config validated successfully against 1 file(s)" and event.level == 30
+        for event, _ in events
     )
     significant = [
         (event, raw)
@@ -532,15 +601,20 @@ def policy_control_correct(
             else {"automerge": False}
         )
         migrations = [
-            raw for event, raw in significant if event.msg == "Config migration necessary"
+            raw
+            for event, raw in significant
+            if event.msg == "Config migration necessary" and event.level == 40
         ]
         return (
             len(migrations) == 1
             and migrations[0].get("oldConfig") == config
             and migrations[0].get("newConfig") == expected
             and all(
-                event.msg == "Config migration necessary"
-                or event.msg.startswith("Config migration diff:")
+                event.level == 40
+                and (
+                    event.msg == "Config migration necessary"
+                    or event.msg.startswith("Config migration diff:")
+                )
                 for event, _ in significant
             )
         )
@@ -550,7 +624,8 @@ def policy_control_correct(
         event, raw = significant[0]
         errors = raw.get("errors")
         return (
-            event.msg == "Found errors in configuration"
+            event.level == 50
+            and event.msg == "Found errors in configuration"
             and isinstance(errors, list)
             and len(errors) == 1
             and isinstance(errors[0], dict)

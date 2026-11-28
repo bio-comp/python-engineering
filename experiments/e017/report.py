@@ -19,11 +19,14 @@ from experiments.e017.evidence import (
     BoundExtraction,
     EvidenceError,
     PolicyReceipt,
+    ProcessReceipt,
     RunIdentity,
     RunStage,
     bind_extraction,
     bind_process,
     expected_environment,
+    log_context,
+    ordered,
     read_bytes,
     read_model,
     require,
@@ -34,10 +37,11 @@ from experiments.e017.oracle import (
     digest,
     extraction_control_correct,
     judge_logs,
+    material_context,
     policy_control_correct,
 )
 from experiments.e017.run import HERE, corpus, fixture_identity, snapshot, source_identity
-from experiments.e017.updates import replay_update, specs
+from experiments.e017.updates import checked_tree, replay_update, specs
 from python_engineering.reporting import REPORT_GENERATOR_VERSION
 from python_engineering.reporting.cli import build_report
 from python_engineering.reporting.models import (
@@ -50,6 +54,7 @@ from python_engineering.reporting.models import (
     Interpretation,
     Observation,
     ObservationState,
+    ReplayManifest,
     Run,
     StudyStatus,
 )
@@ -144,16 +149,16 @@ def _make_run(
     fixture_cases = corpus()
     policy_names = ("repository", "administrative", "obsolete", "invalid-manager", "invalid-type")
     update_specs = specs()
+    repetitions: tuple[Literal[1, 2], ...] = (1, 2)
     update_cases: tuple[tuple[str, Literal[1, 2, 3]], ...] = (
-        *((spec.case_id, 1) for spec in update_specs),
-        *((spec.case_id, 2) for spec in update_specs),
+        *((spec.case_id, rep) for spec in update_specs for rep in repetitions),
         (update_specs[0].case_id, 3),
     )
     verify_population(
         extract,
         {f"{case.case_id}-extract-{rep}" for case in fixture_cases for rep in (1, 2)}
         | {f"policy-{name}" for name in policy_names},
-        {"identity-probe"},
+        {"identity-probe", "expected-inputs"},
     )
     verify_population(lookup, {"mixed-extraction-lookup-1"}, {"identity-probe"})
     verify_population(
@@ -161,6 +166,28 @@ def _make_run(
         {f"{case}-{arm}-{rep}" for case, rep in update_cases for arm in ("native-uv", "renovate")},
         {"identity-probe", "shared-uv-cache"},
     )
+    require(
+        snapshot(extract / "expected-inputs") == extraction_identity.fixture_sha256,
+        "retained expected input population mismatch",
+    )
+    members: dict[str, str] = {}
+
+    def retain(path: Path) -> None:
+        require(path.resolve().is_relative_to(root), "replay artifact outside evidence root")
+        members[path.relative_to(root).as_posix()] = digest(read_bytes(path))
+
+    def retain_tree(path: Path) -> None:
+        for name in checked_tree(path):
+            retain(path / name)
+
+    def retain_extraction(path: Path) -> None:
+        for name in ("receipt.json", "stdout.jsonl", "stderr.txt", "verdict.json"):
+            retain(path / name)
+        retain_tree(path / "fixture")
+
+    for _, directory, filename in stage_paths:
+        retain(directory / filename)
+    retain_tree(extract / "expected-inputs")
     evidence: list[Evidence] = []
     observations: list[Observation] = []
     gates: list[EssentialGate] = []
@@ -182,6 +209,7 @@ def _make_run(
         return key
 
     extraction_ok = True
+    previous = extraction_identity.executed_at
     refs = [register(extract / "run-identity.json", "Versioned extraction condition identity.")]
     for case in fixture_cases:
         verdicts = []
@@ -189,6 +217,16 @@ def _make_run(
             path = extract / f"{case.case_id}-extract-{rep}"
             rec = read_model(path / "receipt.json", BoundExtraction)
             bind_extraction(extraction_identity, rec, case.case_id, rep, case.fingerprint())
+            ordered(previous, rec.started_at, "overlapping or reversed extraction cases")
+            previous = rec.executed_at
+            material_context(
+                read_bytes(path / "stdout.jsonl"),
+                "extract",
+                context=log_context(extraction_identity, extraction_identity.case_path(path.name)),
+                started_at=rec.started_at,
+                completed_at=rec.executed_at,
+            )
+            retain_extraction(path)
             require(snapshot(path / "fixture") == rec.after, "extraction retained bytes mismatch")
             verdict = judge_logs(
                 case,
@@ -218,6 +256,15 @@ def _make_run(
     bind_extraction(
         identities["lookup"], rec, fixture_cases[0].case_id, 1, fixture_cases[0].fingerprint()
     )
+    material_context(
+        read_bytes(path / "stdout.jsonl"),
+        "lookup",
+        context=log_context(identities["lookup"], identities["lookup"].case_path(path.name)),
+        started_at=rec.started_at,
+        completed_at=rec.executed_at,
+    )
+    retain_extraction(path)
+    lookup_completion = rec.executed_at
     require(snapshot(path / "fixture") == rec.after, "lookup retained bytes mismatch")
     verdict = judge_logs(
         fixture_cases[0],
@@ -245,6 +292,10 @@ def _make_run(
     for name in policy_names:
         path = extract / f"policy-{name}"
         rec_policy = read_model(path / "receipt.json", PolicyReceipt)
+        ordered(previous, rec_policy.started_at, "overlapping or reversed policy cases")
+        previous = rec_policy.executed_at
+        for name_of_file in ("receipt.json", "candidate.json", "stdout.jsonl", "stderr.txt"):
+            retain(path / name_of_file)
         config = json.loads((HERE / "policies.json").read_bytes())[name]
         candidate = read_bytes(path / "candidate.json")
         require(candidate == json.dumps(config, indent=2).encode(), "policy fixture mismatch")
@@ -298,11 +349,18 @@ def _make_run(
             note="Not operational policy enforcement.",
         )
     )
+    ordered(
+        previous, identities["lookup"].executed_at, "lookup stage starts before extraction ends"
+    )
+    ordered(
+        lookup_completion, identities["updates"].executed_at, "updates start before lookup ends"
+    )
+    previous = identities["updates"].executed_at
     update_ok = True
     refs = [register(updates / "identity.json", "Versioned update identity.")]
     arms: tuple[tuple[Arm, Literal["baseline", "candidate"]], ...] = (
-        ("native-uv", "baseline"),
         ("renovate", "candidate"),
+        ("native-uv", "baseline"),
     )
     outputs: dict[str, list[dict[str, bytes]]] = {}
     for update_case, rep in update_cases:
@@ -312,6 +370,36 @@ def _make_run(
         for arm, condition in arms:
             path = updates / f"{update_case}-{arm}-{rep}"
             result, actual = replay_update(identities["updates"], spec, arm, rep, updates)
+            first = read_model(path / "initial-check.json", ProcessReceipt)
+            last = read_model(path / ("update.json" if conflict else "repeat.json"), ProcessReceipt)
+            ordered(previous, first.started_at, "overlapping or reversed update cases")
+            previous = last.executed_at
+            for file in (
+                "initial.json",
+                "generated.json",
+                "verdict.json",
+                "uv-invocations.jsonl",
+                "bin/uv",
+            ):
+                retain(path / file)
+            for snapshot_name in ("initial", "generated", "fixture"):
+                retain_tree(path / snapshot_name)
+            if not conflict:
+                retain(path / "repeated.json")
+                retain_tree(path / "repeated")
+            phases = (
+                ("initial-check", "update")
+                if conflict
+                else ("initial-check", "update", "lock-check", "repeat")
+            )
+            for index, phase in enumerate(phases, 1):
+                for suffix in ("json", "stdout", "stderr"):
+                    retain(path / f"{phase}.{suffix}")
+                attempt = path / "uv-attempts" / str(index)
+                for file in ("receipt.json", "stdout", "stderr"):
+                    retain(attempt / file)
+                for snapshot_name in ("before", "after"):
+                    retain_tree(attempt / snapshot_name)
             expected = State.FAIL if conflict else State.PASS
             valid = result.state == expected and (not conflict or result.control_correct is True)
             update_ok = update_ok and valid
@@ -359,12 +447,31 @@ def _make_run(
                 note="Not executed or not established in this condition.",
             )
         )
+    anchor = (extract / "run-identity.json").relative_to(root).as_posix()
+    manifest_id = "replay-population-v1"
+    evidence.append(
+        Evidence(
+            evidence_id=manifest_id,
+            grade=EvidenceGrade.SYNTHETIC if synthetic else EvidenceGrade.CONTROLLED,
+            source=anchor,
+            source_sha256=members[anchor],
+            locator="embedded replay manifest v1",
+            note=f"All {len(members)} required replay artifacts; byte integrity, not attestation.",
+            replay_manifest=ReplayManifest(members=members),
+        )
+    )
+    gates = [
+        gate.model_copy(update={"evidence_ids": (*gate.evidence_ids, manifest_id)})
+        if gate.passed is not None
+        else gate
+        for gate in gates
+    ]
     return Run(
         schema_version="1.0",
-        rubric_revision="e017-q1-case-acceptance-v2",
+        rubric_revision="e017-q1-case-acceptance-v3",
         experiment=Experiment(
             experiment_id="E-017",
-            protocol_revision="Q1-local-r1-v2",
+            protocol_revision="Q1-local-r2-v3",
             title="Renovate Q1 local evidence",
             run_id=run_id,
             executed_at=datetime.now(UTC),
@@ -387,7 +494,7 @@ def _make_run(
             fixture_revision=digest(json.dumps(fixture_identity(), sort_keys=True).encode()),
             lockfile_sha256=digest((repo / "uv.lock").read_bytes()),
             pyproject_sha256=digest((repo / "pyproject.toml").read_bytes()),
-            harness_version="e017-q1-r1-v2",
+            harness_version="e017-q1-r2-v3",
             generator_version=REPORT_GENERATOR_VERSION,
             commands=(
                 "python -m experiments.e017.run --stage extract --policies",
@@ -423,6 +530,7 @@ def _make_run(
             summary="Local case-level acceptance and explicit unqualified conditions.",
             limitations=(
                 "Not independent replication or production readiness.",
+                "Replay verification checks retained bytes, not independent runtime attestation.",
                 "Case-level defect rows describe conflicting requirements, not dependency counts.",
                 "No frozen release index, authenticated PR, OCI or Dependabot run.",
                 "Conflict leaves staging manifest modified; no rollback claim.",

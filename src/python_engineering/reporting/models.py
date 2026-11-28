@@ -119,6 +119,13 @@ class Condition(Contract):
     configuration: str = Field(min_length=1)
 
 
+class ReplayManifest(Contract):
+    """Opt-in complete local replay population, relative to the evidence root."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    members: dict[str, SHA256] = Field(min_length=1)
+
+
 class Evidence(Contract):
     evidence_id: str = Field(min_length=2)
     grade: EvidenceGrade
@@ -126,6 +133,18 @@ class Evidence(Contract):
     locator: str = Field(min_length=1)
     source_sha256: SHA256 | None = None
     note: str = Field(min_length=1)
+    replay_manifest: ReplayManifest | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def bind_replay_anchor(self) -> Evidence:
+        if self.replay_manifest is not None and (
+            self.source_sha256 is None
+            or self.replay_manifest.members.get(self.source) != self.source_sha256
+        ):
+            raise ValueError("replay manifest must bind its evidence anchor")
+        return self
 
 
 class Observation(Contract):

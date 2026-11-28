@@ -44,9 +44,12 @@ def main() -> int:
     with (case / "uv-invocations.jsonl").open("a") as log:
         log.write(json.dumps(args) + "\n")
     shutil.copytree(cwd, target / "before", symlinks=True)
+    started_at = datetime.now(UTC).isoformat()
     started = time.monotonic()
     command = [uv, *args]
     proc = subprocess.run(command, cwd=cwd, env=env, capture_output=True, check=False, timeout=150)
+    completed_at = datetime.now(UTC).isoformat()
+    elapsed = time.monotonic() - started
     shutil.copytree(cwd, target / "after", symlinks=True)
     (target / "stdout").write_bytes(proc.stdout)
     (target / "stderr").write_bytes(proc.stderr)
@@ -59,11 +62,12 @@ def main() -> int:
                 "command": command,
                 "environment": env,
                 "cwd": str(cwd),
-                "executed_at": datetime.now(UTC).isoformat(),
+                "started_at": started_at,
+                "executed_at": completed_at,
                 "returncode": proc.returncode,
                 "before": inventory(target / "before"),
                 "after": inventory(target / "after"),
-                "elapsed_seconds": time.monotonic() - started,
+                "elapsed_seconds": elapsed,
                 "stdout_sha256": hashlib.sha256(proc.stdout).hexdigest(),
                 "stderr_sha256": hashlib.sha256(proc.stderr).hexdigest(),
             },

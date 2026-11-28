@@ -27,17 +27,44 @@ Live failures are evidence, not a reason to discard output. Lookup can exit
 nonzero when Renovate exits zero. The report requires clean, matching source
 identities and replays extraction, lookup, configuration and update verdicts
 from typed receipts and retained raw artifacts. It uses the existing reporting
-system. R1 evidence schema v2 binds all receipts to the exact source, fixture,
+system. R2 evidence schema v3 binds all receipts to the exact source, fixture,
 distribution, interpreter, executable and stage identities. The update arm
 retains initial, immediate generated, final and repeated byte snapshots, plus
 the actual resolver invocations (including attempted and resulting trees).
 Missing or contradictory evidence prevents report admission; the consumer never
 promotes a stored verdict without replay. Synthetic offline tests exercise the
 same consumer through an explicit synthetic-only interface; the report CLI does
-not admit synthetic evidence as genuine execution. The original v1 evidence
-remains immutable and can support only properties actually retained in it;
-its missing independently retained intermediate states and child resolver
-receipts cannot be reconstructed retrospectively.
+not admit synthetic evidence as genuine execution. The original v1 and R1 v2 evidence
+remain immutable; new launch timestamps and invocation context bindings cannot
+be reconstructed retrospectively. The original v1 also lacks independent
+intermediate snapshots and child resolver receipts.
+
+### Execution chronology and report retention (v3)
+
+A stage identity's executed_at is the time the identity is finalized, before
+case execution. Each receipt records started_at just before launching the
+subprocess and executed_at immediately after it returns, before post-process
+snapshot/receipt persistence. elapsed_seconds is independently monotonic;
+it is not used to infer an exact wall-clock start. For the sequential Q1
+workflow, stage/case/phase intervals must be ordered and child resolver
+intervals contained within outer process intervals. Same-host wall times allow
+one millisecond of log quantization; substantial clock reversals or missing
+intervals are not qualified. This is not external clock attestation.
+
+Each extraction/lookup invocation supplies a context derived from its stage
+identity and case/repetition. The three material Renovate events must carry
+that context, a single process/host/repository identity and compatible times
+inside the recorded interval. Startup records need not carry repository data.
+
+The generated report input embeds a versioned replay-member manifest covering
+the exact retained expected inputs, run identities, raw logs/receipts, resolver
+invocations, all required snapshots and verdicts. The shared reporting
+verifier checks every member's local bytes. For v3 reports both
+validate-run and build-report require an evidence root and refuse incomplete,
+altered or unavailable replay populations. This does not rerun the tools or
+attest runtime origin; use the E-017 report command above for semantic replay.
+Older report inputs and already-rendered reports are historical snapshots,
+not evidence that their raw replay population is currently available.
 
 ## Scope
 

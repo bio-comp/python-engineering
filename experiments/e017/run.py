@@ -10,7 +10,6 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -22,6 +21,7 @@ from experiments.e017.evidence import (
     RunStage,
     SourceIdentity,
     expected_environment,
+    log_context,
     now,
 )
 from experiments.e017.oracle import (
@@ -33,6 +33,7 @@ from experiments.e017.oracle import (
     extraction_control_correct,
     judge_logs,
     load_fixtures,
+    material_context,
     policy_control_correct,
 )
 
@@ -204,11 +205,15 @@ def run_case(
     env = expected_environment(identity, case_root)
     command = [identity.node.path, identity.renovate.path, "--platform=local", f"--dry-run={stage}"]
     before = snapshot(fixture)
+    started_at = now()
     start = time.monotonic()
     proc = subprocess.run(
         command, cwd=fixture, env=env, capture_output=True, check=False, timeout=180
     )
+    completed_at = now()
+    elapsed = time.monotonic() - start
     receipt = BoundExtraction(
+        started_at=started_at,
         run_sha256=identity.fingerprint(),
         repetition=repetition,
         cwd=str(fixture),
@@ -223,9 +228,9 @@ def run_case(
         uv_version=identity.uv.version,
         command=tuple(command),
         environment=env,
-        executed_at=datetime.now(UTC).isoformat(),
+        executed_at=completed_at,
         returncode=proc.returncode,
-        elapsed_seconds=time.monotonic() - start,
+        elapsed_seconds=elapsed,
         stdout_sha256=digest(proc.stdout),
         stderr_sha256=digest(proc.stderr),
         before=before,
@@ -234,6 +239,13 @@ def run_case(
     (case_root / "stdout.jsonl").write_bytes(proc.stdout)
     (case_root / "stderr.txt").write_bytes(proc.stderr)
     (case_root / "receipt.json").write_text(receipt.model_dump_json(indent=2))
+    material_context(
+        proc.stdout,
+        stage,
+        context=log_context(identity, case_root),
+        started_at=started_at,
+        completed_at=completed_at,
+    )
     verdict = judge_logs(case, stage, receipt, proc.stdout, proc.stderr)
     (case_root / "verdict.json").write_text(verdict.model_dump_json(indent=2))
     print(
@@ -267,10 +279,13 @@ def validate_policies(identity: RunIdentity) -> bool:
         if name != "administrative":
             command.append("--no-global")
         command.append(str(path))
+        started_at = now()
         start = time.monotonic()
         proc = subprocess.run(
             command, cwd=case_root, env=env, check=False, capture_output=True, timeout=60
         )
+        completed_at = now()
+        elapsed = time.monotonic() - start
         (case_root / "stdout.jsonl").write_bytes(proc.stdout)
         (case_root / "stderr.txt").write_bytes(proc.stderr)
         expected_valid = name in {"repository", "administrative"}
@@ -278,6 +293,7 @@ def validate_policies(identity: RunIdentity) -> bool:
             name, path.read_bytes(), proc.stdout, proc.stderr, proc.returncode
         )
         receipt = PolicyReceipt(
+            started_at=started_at,
             run_sha256=identity.fingerprint(),
             case_id=name,
             repetition=1,
@@ -287,12 +303,12 @@ def validate_policies(identity: RunIdentity) -> bool:
             command=tuple(command),
             environment=env,
             cwd=str(case_root),
-            executed_at=now(),
+            executed_at=completed_at,
             returncode=proc.returncode,
             stdout_sha256=digest(proc.stdout),
             stderr_sha256=digest(proc.stderr),
             config_sha256=before,
-            elapsed_seconds=time.monotonic() - start,
+            elapsed_seconds=elapsed,
             expected_valid=expected_valid,
             control_correct=correct,
             scope="schema validation only",
@@ -328,6 +344,14 @@ def main() -> int:
     uv = Path(shutil.which("uv") or "").resolve(strict=True)
     identity = capture_identity(root, prefix, node, uv, stage)
     fixtures = corpus()
+    if stage == "extract":
+        for name, sha in identity.fixture_sha256.items():
+            target = root / "expected-inputs" / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            data = (HERE / name).read_bytes()
+            if digest(data) != sha:
+                raise ValueError("frozen input changed during capture")
+            target.write_bytes(data)
     (root / "run-identity.json").write_text(identity.model_dump_json(indent=2))
     correct = True
     for case in fixtures:

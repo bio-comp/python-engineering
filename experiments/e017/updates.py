@@ -22,7 +22,9 @@ from experiments.e017.evidence import (
     RunIdentity,
     bind_process,
     expected_environment,
+    nested_timing,
     now,
+    ordered,
     read_bytes,
     read_model,
     require,
@@ -376,11 +378,15 @@ def invoke(
     env: dict[str, str],
     root: Path,
 ) -> subprocess.CompletedProcess[bytes]:
+    started_at = now()
     start = time.monotonic()
     proc = subprocess.run(command, cwd=cwd, env=env, capture_output=True, check=False, timeout=180)
+    completed_at = now()
+    elapsed = time.monotonic() - start
     (root / f"{name}.stdout").write_bytes(proc.stdout)
     (root / f"{name}.stderr").write_bytes(proc.stderr)
     receipt = ProcessReceipt(
+        started_at=started_at,
         run_sha256=identity.fingerprint(),
         case_id=spec.case_id,
         repetition=repetition,
@@ -390,9 +396,9 @@ def invoke(
         command=command,
         environment=env,
         cwd=str(cwd),
-        executed_at=now(),
+        executed_at=completed_at,
         returncode=proc.returncode,
-        elapsed_seconds=time.monotonic() - start,
+        elapsed_seconds=elapsed,
         stdout_sha256=digest(proc.stdout),
         stderr_sha256=digest(proc.stderr),
     )
@@ -457,6 +463,7 @@ def replay_update(
     inner_after: dict[Operation, dict[str, bytes]] = {}
     output: dict[Operation, tuple[bytes, bytes]] = {}
     inner_output: dict[Operation, tuple[bytes, bytes]] = {}
+    previous = identity.executed_at
     for index, (phase, outer, inner) in enumerate(sequence, 1):
         outer_rec = read_model(path / f"{phase}.json", ProcessReceipt)
         stdout, stderr = read_bytes(path / f"{phase}.stdout"), read_bytes(path / f"{phase}.stderr")
@@ -491,6 +498,9 @@ def replay_update(
             stdout=raw_stdout,
             stderr=raw_stderr,
         )
+        nested_timing(outer_rec, inner_rec)
+        ordered(previous, outer_rec.started_at, "overlapping or reversed update phases")
+        previous = outer_rec.executed_at
         if phase != "update" or arm == "native-uv":
             require(
                 (outer_rec.returncode, stdout, stderr)

@@ -16,6 +16,7 @@ from python_engineering.reporting.analysis import analyze
 from python_engineering.reporting.integrity import (
     ReceiptCheck,
     assert_no_local_failures,
+    assert_required_replay,
     verify_receipts,
 )
 from python_engineering.reporting.models import Run
@@ -44,6 +45,7 @@ def _checks(run: Run, root: Path | None) -> tuple[ReceiptCheck, ...]:
     checks = verify_receipts(run, evidence_root=root)
     if root is not None:
         assert_no_local_failures(checks)
+    assert_required_replay(run, checks)
     return checks
 
 

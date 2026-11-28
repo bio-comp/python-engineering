@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import Field, ValidationError, field_validator, model_validator
 
-from experiments.e017.oracle import Receipt, State, digest, unique_json
+from experiments.e017.oracle import CLOCK_SLOP, Receipt, State, digest, unique_json
 from python_engineering.reporting.models import GIT_SHA, SHA256, Contract
 
 RUNTIME_DISTRIBUTION = "npm-45.3.2-re2-fallback"
@@ -104,7 +104,7 @@ class Executable(Contract):
 
 
 class RunIdentity(Contract):
-    schema_version: Literal["e017-q1-r1-v2"] = "e017-q1-r1-v2"
+    schema_version: Literal["e017-q1-r2-v3"] = "e017-q1-r2-v3"
     stage: RunStage
     source: SourceIdentity
     source_root: str
@@ -167,15 +167,17 @@ class RunIdentity(Contract):
 
 
 class BoundExtraction(Receipt):
+    started_at: str
     run_sha256: SHA256
     repetition: Literal[1, 2]
     cwd: str
 
-    _timestamp = field_validator("executed_at")(timestamp)
+    _timestamp = field_validator("started_at", "executed_at")(timestamp)
     _absolute = field_validator("cwd")(absolute)
 
 
 class ProcessReceipt(Contract):
+    started_at: str
     run_sha256: SHA256
     case_id: str = Field(min_length=1)
     repetition: Literal[1, 2, 3]
@@ -191,7 +193,7 @@ class ProcessReceipt(Contract):
     stdout_sha256: SHA256
     stderr_sha256: SHA256
 
-    _timestamp = field_validator("executed_at")(timestamp)
+    _timestamp = field_validator("started_at", "executed_at")(timestamp)
     _absolute = field_validator("cwd")(absolute)
 
 
@@ -205,6 +207,26 @@ class PolicyReceipt(ProcessReceipt):
     config_sha256: SHA256
     control_correct: bool
     scope: Literal["schema validation only"]
+
+
+def ordered(before: str, after: str, reason: str) -> None:
+    """Compare same-host wall times, allowing only millisecond quantization."""
+    require(datetime.fromisoformat(before) <= datetime.fromisoformat(after) + CLOCK_SLOP, reason)
+
+
+def bind_timing(identity: RunIdentity, receipt: BoundExtraction | ProcessReceipt) -> None:
+    ordered(identity.executed_at, receipt.started_at, "execution predates run start")
+    ordered(receipt.started_at, receipt.executed_at, "execution completion predates start")
+
+
+def nested_timing(parent: ProcessReceipt, child: ResolverReceipt) -> None:
+    ordered(parent.started_at, child.started_at, "resolver starts before parent")
+    ordered(child.executed_at, parent.executed_at, "resolver completes after parent")
+
+
+def log_context(identity: RunIdentity, case: Path) -> str:
+    # Exact pinned Renovate logger accepts LOG_CONTEXT as the emitted context.
+    return digest(f"{identity.fingerprint()}:{case.name}".encode())
 
 
 def expected_environment(
@@ -228,6 +250,7 @@ def expected_environment(
         "PATH": path,
         "LOG_FORMAT": "json",
         "LOG_LEVEL": "debug",
+        **({"LOG_CONTEXT": log_context(identity, case)} if identity.stage != "updates" else {}),
         "RENOVATE_CACHE_DIR": str(case / "cache"),
         "RENOVATE_BASE_DIR": str(case / "base"),
         "RENOVATE_AUTODISCOVER": "false",
@@ -246,6 +269,7 @@ def bind_extraction(
     rep: int,
     fixture_sha: str,
 ) -> None:
+    bind_timing(identity, receipt)
     case = identity.case_path(f"{case_id}-{identity.stage}-{rep}")
     require(
         identity.stage in ("extract", "lookup")
@@ -268,9 +292,7 @@ def bind_extraction(
             "--platform=local",
             f"--dry-run={identity.stage}",
         )
-        and receipt.environment == expected_environment(identity, case)
-        and datetime.fromisoformat(receipt.executed_at)
-        >= datetime.fromisoformat(identity.executed_at),
+        and receipt.environment == expected_environment(identity, case),
         "extraction execution identity mismatch",
     )
 
@@ -290,6 +312,7 @@ def bind_process(
     stdout: bytes,
     stderr: bytes,
 ) -> None:
+    bind_timing(identity, receipt)
     require(
         receipt.run_sha256 == identity.fingerprint()
         and receipt.case_id == case_id
@@ -301,8 +324,6 @@ def bind_process(
         and receipt.cwd == str(cwd)
         and receipt.environment == env
         and receipt.stdout_sha256 == digest(stdout)
-        and receipt.stderr_sha256 == digest(stderr)
-        and datetime.fromisoformat(receipt.executed_at)
-        >= datetime.fromisoformat(identity.executed_at),
+        and receipt.stderr_sha256 == digest(stderr),
         f"process receipt mismatch: {case_id}/{arm}/{repetition}/{operation}",
     )

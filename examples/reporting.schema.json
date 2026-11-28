@@ -398,6 +398,17 @@
           "title": "Note",
           "type": "string"
         },
+        "replay_manifest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReplayManifest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "source": {
           "minLength": 3,
           "title": "Source",
@@ -657,6 +668,32 @@
       ],
       "title": "ObservationState",
       "type": "string"
+    },
+    "ReplayManifest": {
+      "additionalProperties": false,
+      "description": "Opt-in complete local replay population, relative to the evidence root.",
+      "properties": {
+        "members": {
+          "additionalProperties": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "minProperties": 1,
+          "title": "Members",
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "members"
+      ],
+      "title": "ReplayManifest",
+      "type": "object"
     },
     "StudyStatus": {
       "enum": [
