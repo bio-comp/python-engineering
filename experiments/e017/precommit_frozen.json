@@ -1,0 +1,23 @@
+[
+  {
+    "case_id": "precommit-frozen",
+    "files": {
+      "renovate.json": "{\"enabledManagers\": [\"pre-commit\"], \"automerge\": false, \"pre-commit\": {\"enabled\": true}}\n",
+      ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # frozen: v5.0.0\n    hooks:\n      - id: trailing-whitespace\n"
+    },
+    "expected": [
+      {
+        "manager": "pre-commit",
+        "file": ".pre-commit-config.yaml",
+        "name": "pre-commit/pre-commit-hooks",
+        "datasource": "github-tags",
+        "value": "v5.0.0",
+        "digest": "cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b",
+        "dep_type": "repository",
+        "required_skip": "github-token-required"
+      }
+    ],
+    "excluded": [],
+    "notes": "Frozen revision from upstream v5.0.0 tag; exact digest and tag comment expected; credential-free lookup skip is required. Extraction only, not execution of hook or update."
+  }
+]

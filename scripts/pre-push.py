@@ -31,6 +31,7 @@ def main() -> int:
         ["uv", "run", "--locked", "ruff", "check", "--no-fix", "."],
         ["uv", "run", "--locked", "ruff", "format", "--check", "."],
         ["uv", "run", "--locked", "mypy", "src", "tests"],
+        ["uv", "run", "--locked", "mypy", "--strict", "experiments/e017"],
         [
             "uv",
             "run",

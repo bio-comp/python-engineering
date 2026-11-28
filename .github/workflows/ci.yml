@@ -19,6 +19,7 @@ jobs:
       - run: uv run --locked ruff check --no-fix .
       - run: uv run --locked ruff format --check .
       - run: uv run --locked mypy src tests
+      - run: uv run --locked mypy --strict experiments/e017
       - run: uv run --locked pytest --randomly-seed=101 --cov=python_engineering --cov-branch --cov-report=term-missing -q
       - run: uv run --locked --group e005-typing mypy --strict experiments/e005
       - run: uv run --locked --group e005-typing pytest --randomly-seed=101 -q experiments/e005/test_matrix.py
