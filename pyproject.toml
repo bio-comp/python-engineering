@@ -49,7 +49,7 @@ mypy_path = "src"
 packages = ["python_engineering"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "experiments/e017"]
 addopts = "--strict-markers --strict-config"
 
 [tool.coverage.run]

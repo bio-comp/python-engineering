@@ -1,0 +1,16 @@
+[
+  {
+    "case_id": "requests-regression",
+    "dependency": "requests",
+    "old_version": "2.32.3",
+    "new_version": "2.32.4",
+    "classification": "calibration-regression"
+  },
+  {
+    "case_id": "idna-independent",
+    "dependency": "idna",
+    "old_version": "3.9",
+    "new_version": "3.10",
+    "classification": "independent"
+  }
+]

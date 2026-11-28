@@ -1,0 +1,314 @@
+[
+  {
+    "case_id": "mixed-extraction",
+    "files": {
+      "renovate.json": "{\n  \"enabledManagers\": [\n    \"pep621\",\n    \"pip_requirements\",\n    \"github-actions\",\n    \"pre-commit\",\n    \"dockerfile\",\n    \"docker-compose\"\n  ],\n  \"automerge\": false,\n  \"pre-commit\": {\n    \"enabled\": true\n  },\n  \"ignorePaths\": [\n    \"ignored/**\"\n  ]\n}\n",
+      "pyproject.toml": "[project]\nname = \"e017-extraction\"\nversion = \"0.0.1\"\nrequires-python = \"==3.14.10\"\ndependencies = [\"requests==2.32.3\", \"idna>=3.8,<4\", \"colorama==0.4.6; sys_platform == 'win32'\"]\n[project.optional-dependencies]\nscience = [\"packaging==24.2\"]\n[dependency-groups]\ntest = [\"pytest==8.3.5\"]\n[build-system]\nrequires = [\"hatchling==1.27.0\"]\nbuild-backend = \"hatchling.build\"\n[tool.uv]\npackage = false\n",
+      "uv.lock": "version = 1\nrevision = 5\nrequires-python = \"==3.14.10\"\n\n[[package]]\nname = \"requests\"\nversion = \"2.32.3\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"idna\"\nversion = \"3.10\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"colorama\"\nversion = \"0.4.6\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"packaging\"\nversion = \"24.2\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"pytest\"\nversion = \"8.3.5\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"urllib3\"\nversion = \"2.2.3\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"e017-extraction\"\nversion = \"0.0.1\"\nsource = { virtual = \".\" }\ndependencies = [{ name = \"requests\" }, { name = \"idna\" }, { name = \"colorama\", marker = \"sys_platform == 'win32'\" }]\n",
+      "requirements.txt": "httpx==0.28.1\n",
+      ".github/workflows/ci.yml": "name: test\non: [push]\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n      - uses: actions/setup-python@v5\n",
+      ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v5.0.0\n    hooks:\n      - id: trailing-whitespace\n  - repo: local\n    hooks:\n      - id: local-check\n        name: Local check\n        entry: python -V\n        language: system\n",
+      "Dockerfile": "FROM python:3.13-slim\n",
+      "compose.yaml": "services:\n  cache:\n    image: redis:7.4.2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n  broker:\n    image: eclipse-mosquitto:2.0.21\n  custom:\n    build: .\n",
+      "ignored/requirements.txt": "excluded-package==1.0\n"
+    },
+    "expected": [
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "python",
+        "datasource": "python-version",
+        "value": "==3.14.10",
+        "dep_type": "requires-python"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "requests",
+        "datasource": "pypi",
+        "value": "==2.32.3",
+        "dep_type": "project.dependencies",
+        "locked": "2.32.3"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "idna",
+        "datasource": "pypi",
+        "value": ">=3.8,<4",
+        "dep_type": "project.dependencies",
+        "locked": "3.10"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "colorama",
+        "datasource": "pypi",
+        "value": "==0.4.6",
+        "dep_type": "project.dependencies",
+        "locked": "0.4.6"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "packaging",
+        "datasource": "pypi",
+        "value": "==24.2",
+        "dep_type": "project.optional-dependencies",
+        "locked": "24.2"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "pytest",
+        "datasource": "pypi",
+        "value": "==8.3.5",
+        "dep_type": "dependency-groups",
+        "locked": "8.3.5"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "hatchling",
+        "datasource": "pypi",
+        "value": "==1.27.0",
+        "dep_type": "build-system.requires"
+      },
+      {
+        "manager": "pip_requirements",
+        "file": "requirements.txt",
+        "name": "httpx",
+        "datasource": "pypi",
+        "value": "==0.28.1"
+      },
+      {
+        "manager": "github-actions",
+        "file": ".github/workflows/ci.yml",
+        "name": "actions/checkout",
+        "datasource": "github-tags",
+        "value": "v7.0.1",
+        "digest": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "dep_type": "action"
+      },
+      {
+        "manager": "github-actions",
+        "file": ".github/workflows/ci.yml",
+        "name": "actions/setup-python",
+        "datasource": "github-tags",
+        "value": "v5",
+        "dep_type": "action"
+      },
+      {
+        "manager": "github-actions",
+        "file": ".github/workflows/ci.yml",
+        "name": "ubuntu",
+        "datasource": "github-runners",
+        "value": "latest",
+        "dep_type": "github-runner",
+        "required_skip": "invalid-version"
+      },
+      {
+        "manager": "pre-commit",
+        "file": ".pre-commit-config.yaml",
+        "name": "pre-commit/pre-commit-hooks",
+        "datasource": "github-tags",
+        "value": "v5.0.0",
+        "dep_type": "repository"
+      },
+      {
+        "manager": "dockerfile",
+        "file": "Dockerfile",
+        "name": "python",
+        "datasource": "docker",
+        "value": "3.13-slim",
+        "dep_type": "final"
+      },
+      {
+        "manager": "docker-compose",
+        "file": "compose.yaml",
+        "name": "redis",
+        "datasource": "docker",
+        "value": "7.4.2",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "manager": "docker-compose",
+        "file": "compose.yaml",
+        "name": "eclipse-mosquitto",
+        "datasource": "docker",
+        "value": "2.0.21"
+      }
+    ],
+    "excluded": [
+      "local-check",
+      "excluded-package",
+      "custom",
+      "urllib3"
+    ],
+    "notes": "Synthetic lock metadata only; transitive urllib3 deliberately excluded from ordinary extraction."
+  },
+  {
+    "case_id": "precommit-disabled",
+    "files": {
+      "renovate.json": "{\n  \"enabledManagers\": [\n    \"pip_requirements\",\n    \"pre-commit\"\n  ],\n  \"automerge\": false\n}\n",
+      "requirements.txt": "httpx==0.28.1\n",
+      ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v5.0.0\n    hooks:\n      - id: trailing-whitespace\n  - repo: local\n    hooks:\n      - id: local-check\n        name: Local check\n        entry: python -V\n        language: system\n"
+    },
+    "expected": [
+      {
+        "manager": "pip_requirements",
+        "file": "requirements.txt",
+        "name": "httpx",
+        "datasource": "pypi",
+        "value": "==0.28.1"
+      }
+    ],
+    "excluded": [
+      "pre-commit/pre-commit-hooks"
+    ],
+    "notes": "Explicit opt-in omitted; positive requirements control prevents vacuity."
+  },
+  {
+    "case_id": "git-source",
+    "files": {
+      "renovate.json": "{\n  \"enabledManagers\": [\n    \"pep621\"\n  ],\n  \"automerge\": false\n}\n",
+      "pyproject.toml": "[project]\nname = \"git-example\"\nversion = \"0.0.1\"\ndependencies = [\"samplelib\"]\n[tool.uv.sources]\nsamplelib = { git = \"https://github.com/example/samplelib\", rev = \"3d3c42e5aac5ba805825da76410c181273ba90b1\" }\n"
+    },
+    "expected": [
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "samplelib",
+        "datasource": "git-refs",
+        "value": null,
+        "digest": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "dep_type": "tool.uv.sources",
+        "package": "https://github.com/example/samplelib"
+      }
+    ],
+    "excluded": [],
+    "notes": "Synthetic immutable Git pin; no fetch implied."
+  },
+  {
+    "case_id": "malformed-toml",
+    "files": {
+      "renovate.json": "{\n  \"enabledManagers\": [\n    \"pep621\"\n  ],\n  \"automerge\": false\n}\n",
+      "pyproject.toml": "[project\nname = \"broken\"\ndependencies = [\"requests==2.32.3\"]\n"
+    },
+    "expected": [
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "requests",
+        "datasource": "pypi",
+        "value": "==2.32.3",
+        "dep_type": "project.dependencies"
+      }
+    ],
+    "excluded": [],
+    "notes": "Known-bad malformed declaration: must FAIL, not a valid opportunity."
+  },
+  {
+    "case_id": "transitive-alert-extraction",
+    "files": {
+      "pyproject.toml": "[project]\nname = \"e017-extraction\"\nversion = \"0.0.1\"\nrequires-python = \"==3.14.10\"\ndependencies = [\"requests==2.32.3\", \"idna>=3.8,<4\", \"colorama==0.4.6; sys_platform == 'win32'\"]\n[project.optional-dependencies]\nscience = [\"packaging==24.2\"]\n[dependency-groups]\ntest = [\"pytest==8.3.5\"]\n[build-system]\nrequires = [\"hatchling==1.27.0\"]\nbuild-backend = \"hatchling.build\"\n[tool.uv]\npackage = false\n",
+      "uv.lock": "version = 1\nrevision = 5\nrequires-python = \"==3.14.10\"\n\n[[package]]\nname = \"requests\"\nversion = \"2.32.3\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"idna\"\nversion = \"3.10\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"colorama\"\nversion = \"0.4.6\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"packaging\"\nversion = \"24.2\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"pytest\"\nversion = \"8.3.5\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"urllib3\"\nversion = \"2.2.3\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n[[package]]\nname = \"e017-extraction\"\nversion = \"0.0.1\"\nsource = { virtual = \".\" }\ndependencies = [{ name = \"requests\" }, { name = \"idna\" }, { name = \"colorama\", marker = \"sys_platform == 'win32'\" }]\n",
+      "renovate.json": "{\n  \"enabledManagers\": [\n    \"pep621\"\n  ],\n  \"automerge\": false,\n  \"packageRules\": [\n    {\n      \"isVulnerabilityAlert\": true,\n      \"matchPackageNames\": [\n        \"urllib3\"\n      ],\n      \"enabled\": true\n    }\n  ]\n}\n"
+    },
+    "expected": [
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "python",
+        "datasource": "python-version",
+        "value": "==3.14.10",
+        "dep_type": "requires-python"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "requests",
+        "datasource": "pypi",
+        "value": "==2.32.3",
+        "dep_type": "project.dependencies",
+        "locked": "2.32.3"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "idna",
+        "datasource": "pypi",
+        "value": ">=3.8,<4",
+        "dep_type": "project.dependencies",
+        "locked": "3.10"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "colorama",
+        "datasource": "pypi",
+        "value": "==0.4.6",
+        "dep_type": "project.dependencies",
+        "locked": "0.4.6"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "packaging",
+        "datasource": "pypi",
+        "value": "==24.2",
+        "dep_type": "project.optional-dependencies",
+        "locked": "24.2"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "pytest",
+        "datasource": "pypi",
+        "value": "==8.3.5",
+        "dep_type": "dependency-groups",
+        "locked": "8.3.5"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "hatchling",
+        "datasource": "pypi",
+        "value": "==1.27.0",
+        "dep_type": "build-system.requires"
+      },
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "urllib3",
+        "datasource": "pypi",
+        "value": null,
+        "dep_type": "uv.lock",
+        "locked": "2.2.3",
+        "required_skip": "lockfile-only"
+      }
+    ],
+    "excluded": [],
+    "notes": "Explicit vulnerability rule exposes transitive lock-only dependency; no vulnerability or update claim."
+  },
+  {
+    "case_id": "unsupported-path",
+    "files": {
+      "renovate.json": "{\"enabledManagers\": [\"pep621\"], \"automerge\": false}\n",
+      "pyproject.toml": "[project]\nname = \"path-example\"\nversion = \"0.0.1\"\ndependencies = [\"samplelib\"]\n[tool.uv.sources]\nsamplelib = { path = \"vendor/samplelib\" }\n"
+    },
+    "expected": [
+      {
+        "manager": "pep621",
+        "file": "pyproject.toml",
+        "name": "samplelib",
+        "datasource": "pypi",
+        "value": null,
+        "dep_type": "tool.uv.sources",
+        "required_skip": "path-dependency"
+      }
+    ],
+    "excluded": [],
+    "notes": "Local path dependency recognized but not eligible for automatic remote update."
+  }
+]

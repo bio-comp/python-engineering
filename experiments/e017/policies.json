@@ -1,0 +1,77 @@
+{
+  "repository": {
+    "automerge": false,
+    "dependencyDashboard": {
+      "enabled": true
+    },
+    "dependencyDashboardApproval": true,
+    "prConcurrentLimit": 2,
+    "prHourlyLimit": 1,
+    "lockFileMaintenance": {
+      "enabled": false
+    },
+    "enabledManagers": [
+      "pep621",
+      "pip_requirements",
+      "github-actions"
+    ],
+    "ignorePaths": [
+      "**/experiments/**",
+      "**/tests/fixtures/**"
+    ],
+    "packageRules": [
+      {
+        "matchUpdateTypes": [
+          "major"
+        ],
+        "enabled": false
+      },
+      {
+        "matchDatasources": [
+          "python-version"
+        ],
+        "enabled": false
+      },
+      {
+        "matchPackageNames": [
+          "pydantic",
+          "numpy",
+          "torch",
+          "polars",
+          "transformers"
+        ],
+        "dependencyDashboardApproval": true
+      }
+    ]
+  },
+  "administrative": {
+    "platform": "github",
+    "autodiscover": false,
+    "repositories": [
+      "example/isolated-lab"
+    ],
+    "onboarding": false,
+    "requireConfig": "required",
+    "allowScripts": false,
+    "allowPlugins": false,
+    "allowedCommands": [],
+    "allowedEnv": [],
+    "allowedUnsafeExecutions": [],
+    "exposeAllEnv": false,
+    "force": {
+      "automerge": false,
+      "platformAutomerge": false
+    }
+  },
+  "obsolete": {
+    "dependencyDashboard": true
+  },
+  "invalid-manager": {
+    "enabledManagers": [
+      "not-a-manager"
+    ]
+  },
+  "invalid-type": {
+    "automerge": "false"
+  }
+}
