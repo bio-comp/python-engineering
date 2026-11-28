@@ -63,6 +63,13 @@ verifier checks every member's local bytes. For v3 reports both
 validate-run and build-report require an evidence root and refuse incomplete,
 altered or unavailable replay populations. This does not rerun the tools or
 attest runtime origin; use the E-017 report command above for semantic replay.
+The v3 protocol additionally fixes the required stage-relative path population
+at 754 members (135 extraction, 14 lookup, 605 update). The shared verifier
+checks its frozen path-set identity independently of the submitted manifest,
+so removing the manifest or replacing required paths with unrelated paths
+cannot yield a complete replay verification. Changed fixture populations need
+a separately versioned protocol. Missing or additional unexpected replay files
+may block report admission; preserve their raw failure evidence.
 Older report inputs and already-rendered reports are historical snapshots,
 not evidence that their raw replay population is currently available.
 

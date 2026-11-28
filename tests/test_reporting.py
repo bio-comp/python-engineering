@@ -192,7 +192,7 @@ def test_immutable_output_bundle_and_sha256(tmp_path: Path) -> None:
     assert build_report(MEASURED, target) == target / "manifest.json"
     manifest = json.loads((target / "manifest.json").read_text())
     assert manifest["synthetic_demonstration"] is True
-    assert manifest["generator_version"] == "0.2.3"
+    assert manifest["generator_version"] == "0.2.4"
     assert manifest["input_sha256"] == hashlib.sha256(MEASURED.read_bytes()).hexdigest()
     for name, digest in manifest["files_sha256"].items():
         assert hashlib.sha256((target / name).read_bytes()).hexdigest() == digest

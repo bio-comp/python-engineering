@@ -183,3 +183,21 @@ E-017 constructs the manifest only after independently replaying its required
 population. To re-adjudicate outcomes, run the experiment-specific consumer.
 Old report inputs without a replay manifest remain historical snapshots, not
 proof that all original raw evidence is currently available.
+
+
+### E-017 v3 population completeness — reporting generator 0.2.4
+
+The existing opt-in manifest contract remains unchanged for ordinary reports.
+E-017 Q1-local-r2-v3 requires its replay-population receipt and an exact frozen
+stage-relative path-set identity, independently derived from the versioned
+fixtures and required capture lifecycle. For this protocol a dropped field,
+dropped aggregate, truncated member map, equal-count path substitution or
+detached gate reference fails verification, rather than falling back to
+individual normalized receipts. The independent fixture-derived path oracle
+is exercised by the E-017 offline tests. Relocating stage directories does
+not change the normalized path identity. All underlying bytes still require
+hash verification; a path-set identity alone does not establish integrity.
+This is a protocol-specific completeness check, not a semantic replay or
+runtime attestation system. Earlier protocols retain their historical
+verification semantics; their reports do not establish current availability
+of complete replay evidence.

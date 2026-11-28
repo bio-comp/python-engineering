@@ -977,3 +977,199 @@ def test_real_uv_probe_lifecycle(tmp_path: Path) -> None:
     assert rec.stderr_sha256 == digest(proc.stderr) == digest((path / "stderr").read_bytes())
     assert rec.command == (sys.executable, "-c", script)
     assert json.loads((root / "uv-invocations.jsonl").read_text()) == ["-c", script]
+
+
+def expected_v3_paths() -> set[str]:
+    """Independent path oracle from frozen fixture inputs, not observed directories."""
+    paths = {"extract/run-identity.json", "lookup/run-identity.json", "updates/identity.json"}
+    paths.update(f"extract/expected-inputs/{name}" for name in fixture_identity())
+
+    def extraction_paths(case: Fixture, stage: str, repetition: int) -> None:
+        prefix = f"{stage}/{case.case_id}-{stage}-{repetition}"
+        paths.update(
+            f"{prefix}/{name}"
+            for name in (
+                "receipt.json",
+                "stdout.jsonl",
+                "stderr.txt",
+                "verdict.json",
+            )
+        )
+        paths.update(f"{prefix}/fixture/{name}" for name in case.files)
+
+    for case in corpus():
+        for rep in (1, 2):
+            extraction_paths(case, "extract", rep)
+    extraction_paths(corpus()[0], "lookup", 1)
+    for policy in json.loads((HERE / "policies.json").read_bytes()):
+        paths.update(
+            f"extract/policy-{policy}/{name}"
+            for name in (
+                "receipt.json",
+                "candidate.json",
+                "stdout.jsonl",
+                "stderr.txt",
+            )
+        )
+    for index, spec in enumerate(specs()):
+        for rep in (1, 2, 3) if index == 0 else (1, 2):
+            conflict = rep == 3
+            for arm in ("renovate", "native-uv"):
+                prefix = f"updates/{spec.case_id}-{arm}-{rep}"
+                initial, _, _ = expected_transition(spec, conflict)
+                paths.update(
+                    f"{prefix}/{name}"
+                    for name in (
+                        "initial.json",
+                        "generated.json",
+                        "verdict.json",
+                        "uv-invocations.jsonl",
+                        "bin/uv",
+                    )
+                )
+                states: tuple[str, ...] = ("initial", "generated", "fixture")
+                phases: tuple[str, ...] = ("initial-check", "update")
+                if not conflict:
+                    states += ("repeated",)
+                    phases += ("lock-check", "repeat")
+                    paths.add(f"{prefix}/repeated.json")
+                paths.update(f"{prefix}/{state}/{name}" for state in states for name in initial)
+                for i, phase in enumerate(phases, 1):
+                    paths.update(
+                        f"{prefix}/{phase}.{suffix}" for suffix in ("json", "stdout", "stderr")
+                    )
+                    attempt = f"{prefix}/uv-attempts/{i}"
+                    paths.update(
+                        f"{attempt}/{name}" for name in ("receipt.json", "stdout", "stderr")
+                    )
+                    paths.update(
+                        f"{attempt}/{state}/{name}"
+                        for state in ("before", "after")
+                        for name in initial
+                    )
+    return paths
+
+
+def test_v3_required_population_from_frozen_spec(bundle: Path) -> None:
+    from python_engineering.reporting.integrity import ReceiptStatus, verify_receipts
+
+    run = report(bundle)
+    aggregate = next(e for e in run.evidence if e.replay_manifest is not None)
+    assert aggregate.replay_manifest is not None
+    expected = expected_v3_paths()
+    assert set(aggregate.replay_manifest.members) == expected
+    assert len(expected) == 754
+    assert (
+        next(
+            check.status
+            for check in verify_receipts(run, evidence_root=bundle)
+            if check.evidence_id == aggregate.evidence_id
+        )
+        == ReceiptStatus.REPLAY_VERIFIED
+    )
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "omitted-field",
+        "omitted-aggregate",
+        "normalized-only-map",
+        "same-count-substitution",
+        "inconsistent-reference",
+        "unlinked-gate",
+    ],
+)
+def test_v3_manifest_contract_cannot_be_projected_away(
+    bundle: Path,
+    tmp_path: Path,
+    variant: str,
+) -> None:
+    from python_engineering.reporting.cli import main
+    from python_engineering.reporting.integrity import verify_receipts
+
+    run = report(bundle)
+    data = json.loads(run.model_dump_json())
+    aggregate = next(e for e in data["evidence"] if e.get("replay_manifest"))
+    members = aggregate["replay_manifest"]["members"]
+    evidence_root = bundle
+    if variant in {"omitted-field", "omitted-aggregate", "normalized-only-map"}:
+        evidence_root = tmp_path / "stripped"
+        for item in run.evidence:
+            target = evidence_root / item.source
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(bundle / item.source, target)
+        if variant == "omitted-field":
+            del aggregate["replay_manifest"]
+        elif variant == "omitted-aggregate":
+            data["evidence"].remove(aggregate)
+            for gate_row in data["gates"]:
+                gate_row["evidence_ids"] = [
+                    ref for ref in gate_row["evidence_ids"] if ref != aggregate["evidence_id"]
+                ]
+        else:
+            aggregate["replay_manifest"]["members"] = {
+                e.source: e.source_sha256 for e in run.evidence
+            }
+    elif variant == "same-count-substitution":
+        missing = "updates/requests-regression-renovate-1/uv-attempts/3/receipt.json"
+        (bundle / missing).unlink()
+        del members[missing]
+        substitute = "updates/requests-regression-renovate-1/uv-attempts/3/unrelated.json"
+        (bundle / substitute).write_bytes(b"irrelevant")
+        members[substitute] = digest(b"irrelevant")
+        assert len(members) == 754
+    elif variant == "inconsistent-reference":
+        data["evidence"][1]["source_sha256"] = digest(b"not the manifest digest")
+    else:
+        next(g for g in data["gates"] if g["gate_id"] == "updates")["evidence_ids"].remove(
+            aggregate["evidence_id"]
+        )
+    source = tmp_path / "projected-input.json"
+    write_json(source, data)
+    projected = Run.model_validate_json(source.read_bytes())
+    with pytest.raises(ValueError, match="E-017 v3"):
+        verify_receipts(projected, evidence_root=evidence_root)
+    with pytest.raises(ValueError, match="E-017 v3"):
+        main(["validate-run", str(source), "--evidence-root", str(evidence_root)])
+    with pytest.raises(ValueError, match="E-017 v3"):
+        build_report(source, tmp_path / "must-not-publish", evidence_root=evidence_root)
+    assert not (tmp_path / "must-not-publish").exists()
+
+
+def test_v3_manifest_population_is_independent_of_stage_directory_names(
+    bundle: Path,
+    tmp_path: Path,
+) -> None:
+    from python_engineering.reporting.integrity import (
+        ReceiptStatus,
+        assert_required_replay,
+        verify_receipts,
+    )
+
+    run = report(bundle)
+    data = json.loads(run.model_dump_json())
+    aggregate = next(e for e in data["evidence"] if e.get("replay_manifest"))
+    destination = tmp_path / "relocated"
+    stages = {"extract": "nested/a", "lookup": "nested/b", "updates": "nested/c"}
+
+    def relocated(name: str) -> str:
+        stage, relative = name.split("/", 1)
+        return f"{stages[stage]}/{relative}"
+
+    members = aggregate["replay_manifest"]["members"]
+    for name in members:
+        target = destination / relocated(name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(bundle / name, target)
+    aggregate["replay_manifest"]["members"] = {
+        relocated(name): sha for name, sha in members.items()
+    }
+    for item in data["evidence"]:
+        item["source"] = relocated(item["source"])
+    moved = Run.model_validate_json(json.dumps(data))
+    checks = verify_receipts(moved, evidence_root=destination)
+    assert_required_replay(moved, checks)
+    assert next(
+        check.status for check in checks if check.evidence_id == aggregate["evidence_id"]
+    ) == (ReceiptStatus.REPLAY_VERIFIED)
